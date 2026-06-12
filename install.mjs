@@ -41,6 +41,14 @@ function discoverPlugins() {
 // ── Install logic ─────────────────────────────────────────────────────
 
 function installPlugin(meta, targetPluginsDir) {
+  const dest = join(targetPluginsDir, `${meta.name}.ts`)
+  const srcName = meta.files.includes("index.ts") ? "index.ts" : meta.files[0]
+  mkdirSync(targetPluginsDir, { recursive: true })
+  writeFileSync(dest, readFileSync(join(meta.dir, srcName), "utf8"))
+  console.log(`  ✓ ${meta.name} → ${dest}`)
+}
+
+function runInstall(dataDir, _configDir, label, pluginMap, requested) {
   const targetPluginsDir = join(dataDir, "plugins")
   const packageJson = join(dataDir, "package.json")
   console.log(`\n→ Installing ${label}…\n`)
@@ -61,7 +69,6 @@ function installPlugin(meta, targetPluginsDir) {
   console.log("  Installing dependencies…")
   execSync("npm install --no-audit --no-fund", { cwd: dataDir, stdio: "pipe" })
   console.log("  ✓ Dependencies installed")
-
   console.log(`\n  Done (${label})\n`)
 }
 
