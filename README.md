@@ -5,9 +5,9 @@
 ## Установка
 
 ```bash
-npx opencode-plugins              # все плагины (авто: локально или глобально)
-npx opencode-plugins vision       # только vision
-npx opencode-plugins vision foo   # выборочно
+npx github:aadegtyarev/opencode-plugins              # все плагины
+npx github:aadegtyarev/opencode-plugins vision       # только vision
+npx github:aadegtyarev/opencode-plugins vision foo   # выборочно
 ```
 
 Флаги:
