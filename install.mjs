@@ -4,7 +4,7 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { execSync } from "node:child_process"
 import { homedir } from "node:os"
-import { createInterface } from "node:readline"
+import { createInterface, emitKeypressEvents } from "node:readline"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const GLOBAL_DIR = join(homedir(), ".config", "opencode")
@@ -135,7 +135,7 @@ async function promptList(question, choices, opts) {
   const selected = new Set()
 
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  readline.emitKeypressEvents(process.stdin)
+  emitKeypressEvents(process.stdin)
 
   const render = () => {
     const lines = drawList(choices, cursor, multi ? selected : undefined, question)
