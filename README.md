@@ -1,55 +1,55 @@
 # opencode-plugins
 
-Коллекция плагинов для [OpenCode](https://github.com/anomalyco/opencode). Ставь всё сразу или выборочно.
+A collection of plugins for [OpenCode](https://github.com/anomalyco/opencode). Install all at once or pick what you need.
 
-## Установка
-
-```bash
-npx github:aadegtyarev/opencode-plugins              # все плагины
-npx github:aadegtyarev/opencode-plugins vision       # только vision
-npx github:aadegtyarev/opencode-plugins vision foo   # выборочно
-```
-
-Флаги:
+## Install
 
 ```bash
-npx opencode-plugins --local      # принудительно в проект (.opencode/)
-npx opencode-plugins --global     # принудительно глобально (~/.config/opencode/)
-npx opencode-plugins --help       # справка
+npx github:aadegtyarev/opencode-plugins              # interactive: pick target + plugins
+npx github:aadegtyarev/opencode-plugins vision       # non-interactive: specific plugins
+npx github:aadegtyarev/opencode-plugins vision foo   # multiple
 ```
 
-Установщик автоматически:
-- Копирует файлы плагинов в `plugins/`
-- Прописывает `@opencode-ai/plugin` в `package.json` и запускает `npm install`
-- Добавляет плагины в массив `plugin` в `opencode.json`/`.jsonc`
-- Определяет локальный проект по наличию `.opencode/` или `opencode.json`
+Flags:
+
+```bash
+npx github:aadegtyarev/opencode-plugins --local      # force project install (.opencode/)
+npx github:aadegtyarev/opencode-plugins --global     # force global install (~/.config/opencode/)
+npx github:aadegtyarev/opencode-plugins --help       # show help
+```
+
+The installer automatically:
+- Copies plugin files into `plugins/`
+- Adds `@opencode-ai/plugin` to `package.json` and runs `npm install`
+- Registers plugins in the `plugin` array of `opencode.json`/`.jsonc`
+- Detects a local project by the presence of `.opencode/` or `opencode.json`
 
 ---
 
-## Плагины
+## Plugins
 
 ### vision — multimodal-bridge
 
-Мультимодальность для любых моделей через отдельную vision-модель.
+Multimodality for any text model via a separate vision model.
 
-**Как работает:** перехватывает изображения и отправляет в vision-модель, текстовое описание подмешивается в контекст. Основная модель «видит» картинку даже без нативной поддержки.
+**How it works:** the plugin intercepts images, sends them to a vision model, and injects the text description into the context. Your primary model "sees" images even without native vision support.
 
-**Zero-config:** сам находит подходящего провайдера среди настроенных в opencode. При старте показывает toast: `Vision: openrouter/google/gemini-2.0-flash-exp:free`.
+**Zero-config:** auto-discovers a vision-capable provider from your opencode config. Shows a toast on startup: `Vision: openrouter/google/gemini-2.0-flash-exp:free`.
 
-**Поддерживаемые провайдеры:** OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Together, Fireworks, xAI + любой OpenAI-совместимый.
+**Vision-priming:** on the first image in a session, injects a note telling the text model it has vision capabilities and to trust the provided descriptions. Models like DeepSeek stop refusing and start using the image descriptions.
 
-**Vision-priming:** при первой картинке в сессии подмешивает модели инструкцию — «ты умеешь смотреть картинки, описание уже есть, читай и работай». Текстовые модели (DeepSeek и т.п.) перестают отказываться и начинают использовать описание.
+**Supported providers:** OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Together, Fireworks, xAI + any OpenAI-compatible API.
 
-**Три механизма перехвата:**
-| Хук | Когда |
+**Three interception hooks:**
+| Hook | When |
 |---|---|
-| `chat.message` | Картинка вставлена в чат |
-| `tool.execute.after` на `read` | Агент читает файл картинки |
-| `describe_image` тул | Явный вызов |
+| `chat.message` | Image pasted/dropped in chat |
+| `tool.execute.after` on `read` | Agent reads an image file |
+| `describe_image` tool | Explicit call |
 
-**Форматы:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
+**Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Настройка (опционально):**
+**Config (optional):**
 
 ```json
 {
@@ -64,14 +64,14 @@ npx opencode-plugins --help       # справка
 
 ---
 
-## Структура репозитория
+## Repo structure
 
 ```
 plugins/
   vision/
-    index.ts        ← код плагина
-install.mjs         ← универсальный установщик
-package.json        ← npm-пакет
+    index.ts        ← plugin code
+install.mjs         ← universal installer
+package.json        ← npm package
 ```
 
-Каждый плагин — папка в `plugins/`, имя папки = имя плагина в `opencode.json`. Чтобы добавить новый плагин, создай `plugins/<name>/index.ts` — установщик подхватит автоматически.
+Each plugin is a folder under `plugins/`. The folder name is the plugin name in `opencode.json`. To add a new plugin, create `plugins/<name>/index.ts` — the installer picks it up automatically.
