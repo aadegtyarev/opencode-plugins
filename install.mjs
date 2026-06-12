@@ -200,7 +200,8 @@ async function main() {
     } else if (hasLocal) {
       runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
     } else {
-      runInstall(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", pluginMap, requested)
+      // No local project detected — install locally anyway (user is in a directory)
+      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
     }
     return
   }
