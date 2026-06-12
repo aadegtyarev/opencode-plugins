@@ -390,3 +390,5 @@ export const MultimodalBridge: Plugin = async (ctx, options) => {
     },
   }
 }
+
+export default MultimodalBridge
