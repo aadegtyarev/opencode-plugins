@@ -1,0 +1,28 @@
+{
+  "name": "opencode-plugins",
+  "version": "0.1.0",
+  "description": "Collection of OpenCode plugins. Install selectively via npx.",
+  "type": "module",
+  "bin": "./install.mjs",
+  "files": [
+    "install.mjs",
+    "plugins/",
+    "package.json"
+  ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "multimodal",
+    "vision",
+    "image",
+    "screenshot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aadegtyarev/opencode-plugins"
+  }
+}

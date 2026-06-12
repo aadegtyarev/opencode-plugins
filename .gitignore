@@ -1,0 +1,3 @@
+node_modules
+.opencode/node_modules
+.opencode/package-lock.json
