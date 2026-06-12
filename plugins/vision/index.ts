@@ -120,7 +120,7 @@ async function resolveConfig(options: PluginOptions, client: any): Promise<Resol
   try {
     const result = await client.config.providers()
     allProviders = result?.data?.providers || result?.providers || []
-  } catch { }
+  } catch { /* fall back to env vars */ }
 
   if (options.provider) {
     const pid = options.provider
@@ -227,36 +227,39 @@ async function describeFile(filePath: string, config: ResolvedConfig, prompt?: s
 
 export const VisionPlugin = async (ctx: any, options: any) => {
   const opts = (options || {}) as PluginOptions
-  const config = await resolveConfig(opts, ctx.client)
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  if (!config.apiKey) {
-    const msg =
-      `[multimodal-bridge] No vision provider found. ` +
-      `Configure one in opencode.json → provider.<id>.options.apiKey. ` +
-      `Supported: openai, anthropic, openrouter, groq, deepseek, together, fireworks, xai.`
-    console.warn(msg)
-    try {
-      await ctx.client.tui.showToast({
-        body: { message: msg, variant: "warning", duration: 8000 },
-      })
-    } catch { }
-  } else if (!opts.provider) {
-    const msg = `Vision: ${config.providerId}/${config.model}`
-    try {
-      await ctx.client.tui.showToast({
-        body: { message: msg, variant: "info", duration: 4000 },
-      })
-    } catch { }
+  // Lazy config — resolves on first use, prevents blocking at startup
+  let configPromise: Promise<ResolvedConfig> | null = null
+  const getConfig = () => {
+    if (!configPromise) configPromise = resolveConfig(opts, ctx.client)
+    return configPromise
   }
+
+  const showToast = async (msg: string, variant: string, duration: number) => {
+    try { await ctx.client.tui.showToast({ body: { message: msg, variant, duration } }) } catch { }
+  }
+
+  // Fire-and-forget: resolve config in background for early toast
+  getConfig().then((config) => {
+    if (!config.apiKey) {
+      console.warn(
+        `[multimodal-bridge] No vision provider found. ` +
+        `Configure one in opencode.json → provider.<id>.options.apiKey. ` +
+        `Supported: openai, anthropic, openrouter, groq, deepseek, together, fireworks, xai.`
+      )
+      showToast("[vision] No API key configured", "warning", 8000)
+    } else if (!opts.provider) {
+      showToast(`Vision: ${config.providerId}/${config.model}`, "info", 4000)
+    }
+  })
 
   return {
     tool: {
       describe_image: tool({
         description:
-          "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model via " +
-          `the configured provider (${config.providerId}/${config.model}). ` +
+          "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model. " +
           "Use this tool whenever you encounter an image file and need to understand its contents. " +
           "Returns a detailed text description of what the image shows.",
         args: {
@@ -264,6 +267,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
           prompt: tool.schema.string().optional().describe("Custom prompt to focus the description"),
         },
         async execute(args: any, context: any) {
+          const config = await getConfig()
           if (!config.apiKey) return `Error: No API key configured. Configure one in opencode.json.`
           const { path, prompt } = args
           const absolutePath = path.startsWith("/") ? path : `${context.directory}/${path}`
@@ -277,6 +281,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       }),
     },
     "chat.message": async (_input: any, output: any) => {
+      const config = await getConfig()
       if (!config.apiKey) return
       const imageParts = output.parts.filter(
         (p: any) => p.type === "file" && isImageMime((p as FilePart).mime),
@@ -312,6 +317,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       }
     },
     "tool.execute.after": async (input: any) => {
+      const config = await getConfig()
       if (!config.apiKey) return
       if (input.tool !== "read") return
       const args = input.args as Record<string, any> | undefined
