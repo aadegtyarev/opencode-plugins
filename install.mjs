@@ -12,15 +12,6 @@ const PLUGINS_SRC = join(__dirname, "plugins")
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function stripJsonComments(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
-}
-
-function readJsonc(path) {
-  if (!existsSync(path)) return null
-  try { return { json: JSON.parse(stripJsonComments(readFileSync(path, "utf8"))), raw: "" } } catch { return null }
-}
-
 function findConfig(dir) {
   for (const name of ["opencode.jsonc", "opencode.json"]) {
     const p = join(dir, name)
@@ -50,28 +41,6 @@ function discoverPlugins() {
 // ── Install logic ─────────────────────────────────────────────────────
 
 function installPlugin(meta, targetPluginsDir) {
-  const dest = join(targetPluginsDir, `${meta.name}.ts`)
-  const srcName = meta.files.includes("index.ts") ? "index.ts" : meta.files[0]
-  mkdirSync(targetPluginsDir, { recursive: true })
-  writeFileSync(dest, readFileSync(join(meta.dir, srcName), "utf8"))
-  console.log(`  ✓ ${meta.name} → ${dest}`)
-}
-
-function addPluginToConfig(configPath, name) {
-  const existing = readJsonc(configPath)
-  let config = existing?.json || {}
-  if (!Array.isArray(config.plugin)) config.plugin = []
-  if (config.plugin.some((p) => (typeof p === "string" && p === name) || (Array.isArray(p) && p[0] === name))) {
-    console.log(`  ✓ "${name}" already in config`)
-    return false
-  }
-  config.plugin.push(name)
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
-  console.log(`  ✓ Added "${name}" to ${configPath}`)
-  return true
-}
-
-function runInstall(dataDir, configDir, label, pluginMap, requested) {
   const targetPluginsDir = join(dataDir, "plugins")
   const packageJson = join(dataDir, "package.json")
   console.log(`\n→ Installing ${label}…\n`)
@@ -92,15 +61,7 @@ function runInstall(dataDir, configDir, label, pluginMap, requested) {
   console.log("  Installing dependencies…")
   execSync("npm install --no-audit --no-fund", { cwd: dataDir, stdio: "pipe" })
   console.log("  ✓ Dependencies installed")
-  const configPath = findConfig(configDir)
-  if (configPath) {
-    for (const name of requested) { if (pluginMap.has(name)) addPluginToConfig(configPath, name) }
-  } else {
-    const newPath = join(configDir, "opencode.json")
-    const names = requested.filter((n) => pluginMap.has(n))
-    writeFileSync(newPath, JSON.stringify({ plugin: names }, null, 2) + "\n")
-    console.log(`  ✓ Created ${newPath} with: ${names.join(", ")}`)
-  }
+
   console.log(`\n  Done (${label})\n`)
 }
 
@@ -207,6 +168,7 @@ async function main() {
     console.log("Flags:\n  --local   Install into project .opencode/\n  --global  Install into ~/.config/opencode/\n  --help    Show this help\n")
     console.log("Available plugins:")
     for (const [name] of pluginMap) console.log(`  ${name}`)
+    console.log("\nPlugins are copied to .opencode/plugins/ and auto-loaded — no config changes needed.")
     console.log("\nRun without arguments for interactive mode.\n")
     process.exit(0)
   }
@@ -261,6 +223,7 @@ async function main() {
   const label = target === "local" ? "local (.opencode/)" : "global (~/.config/opencode/)"
   console.log(`\n  Target:  ${label}`)
   console.log(`  Plugins: ${selectedPlugins.join(", ")}`)
+  console.log(`\n  Files are auto-loaded — no config changes needed.`)
   const ok = await promptConfirm("Proceed with installation?")
   if (!ok) { console.log("  Cancelled.\n"); process.exit(0) }
 

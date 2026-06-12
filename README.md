@@ -18,11 +18,12 @@ npx github:aadegtyarev/opencode-plugins --global     # force global install (~/.
 npx github:aadegtyarev/opencode-plugins --help       # show help
 ```
 
-The installer automatically:
+The installer:
 - Copies plugin files into `plugins/`
 - Adds `@opencode-ai/plugin` to `package.json` and runs `npm install`
-- Registers plugins in the `plugin` array of `opencode.json`/`.jsonc`
 - Detects a local project by the presence of `.opencode/` or `opencode.json`
+
+**Plugins placed in `.opencode/plugins/` are auto-loaded by OpenCode — no config changes needed.**
 
 ---
 
@@ -49,7 +50,7 @@ Multimodality for any text model via a separate vision model.
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Config (optional):**
+**Config (optional):** only needed if you install vision as an npm package:
 
 ```json
 {
@@ -74,4 +75,4 @@ install.mjs         ← universal installer
 package.json        ← npm package
 ```
 
-Each plugin is a folder under `plugins/`. The folder name is the plugin name in `opencode.json`. To add a new plugin, create `plugins/<name>/index.ts` — the installer picks it up automatically.
+Each plugin is a folder under `plugins/`. The folder name is the plugin file name. To add a new plugin, create `plugins/<name>/index.ts` — the installer picks it up automatically.
