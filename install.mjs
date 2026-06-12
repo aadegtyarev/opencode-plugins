@@ -4,6 +4,7 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { execSync } from "node:child_process"
 import { homedir } from "node:os"
+import { createInterface } from "node:readline"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const GLOBAL_DIR = join(homedir(), ".config", "opencode")
@@ -11,19 +12,16 @@ const PLUGINS_SRC = join(__dirname, "plugins")
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function stripJsonComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "")
+function stripJsonComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
 }
 
-function readJsonc(path: string): { json: any; raw: string } | null {
+function readJsonc(path) {
   if (!existsSync(path)) return null
-  const raw = readFileSync(path, "utf8")
-  try { return { json: JSON.parse(stripJsonComments(raw)), raw } } catch { return null }
+  try { return { json: JSON.parse(stripJsonComments(readFileSync(path, "utf8"))), raw: "" } } catch { return null }
 }
 
-function findConfig(dir: string): string | null {
+function findConfig(dir) {
   for (const name of ["opencode.jsonc", "opencode.json"]) {
     const p = join(dir, name)
     if (existsSync(p)) return p
@@ -33,98 +31,56 @@ function findConfig(dir: string): string | null {
 
 // ── Plugin discovery ──────────────────────────────────────────────────
 
-interface PluginMeta {
-  name: string
-  dir: string
-  files: string[] // relative paths from plugins/<name>/
-}
-
-function discoverPlugins(): Map<string, PluginMeta> {
-  const plugins = new Map<string, PluginMeta>()
-
+function discoverPlugins() {
+  const plugins = new Map()
   if (!existsSync(PLUGINS_SRC)) return plugins
-
   for (const entry of readdirSync(PLUGINS_SRC)) {
     const full = join(PLUGINS_SRC, entry)
     if (!statSync(full).isDirectory()) continue
-
-    const files: string[] = []
+    const files = []
     for (const f of readdirSync(full)) {
-      if (f.endsWith(".ts") || f.endsWith(".js")) {
-        files.push(f)
-      }
+      if (f.endsWith(".ts") || f.endsWith(".js")) files.push(f)
     }
     if (files.length === 0) continue
-
     plugins.set(entry, { name: entry, dir: full, files })
   }
   return plugins
 }
 
-// ── Install one plugin ────────────────────────────────────────────────
+// ── Install logic ─────────────────────────────────────────────────────
 
-function installPlugin(meta: PluginMeta, targetPluginsDir: string): boolean {
+function installPlugin(meta, targetPluginsDir) {
   const dest = join(targetPluginsDir, `${meta.name}.ts`)
-
-  // Use index.ts if present, otherwise first .ts file
   const srcName = meta.files.includes("index.ts") ? "index.ts" : meta.files[0]
-  const src = join(meta.dir, srcName)
-
   mkdirSync(targetPluginsDir, { recursive: true })
-  writeFileSync(dest, readFileSync(src, "utf8"))
+  writeFileSync(dest, readFileSync(join(meta.dir, srcName), "utf8"))
   console.log(`  ✓ ${meta.name} → ${dest}`)
-  return true
 }
 
-function addPluginToConfig(configPath: string, name: string): boolean {
+function addPluginToConfig(configPath, name) {
   const existing = readJsonc(configPath)
   let config = existing?.json || {}
   if (!Array.isArray(config.plugin)) config.plugin = []
-
-  const hasPlugin = config.plugin.some((p: any) =>
-    (typeof p === "string" && p === name) ||
-    (Array.isArray(p) && p[0] === name)
-  )
-  if (hasPlugin) {
+  if (config.plugin.some((p) => (typeof p === "string" && p === name) || (Array.isArray(p) && p[0] === name))) {
     console.log(`  ✓ "${name}" already in config`)
     return false
   }
-
   config.plugin.push(name)
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
   console.log(`  ✓ Added "${name}" to ${configPath}`)
   return true
 }
 
-// ── Main install ──────────────────────────────────────────────────────
-
-function install(
-  dataDir: string,
-  configDir: string,
-  label: string,
-  plugins: Map<string, PluginMeta>,
-  requested: string[],
-) {
+function runInstall(dataDir, configDir, label, pluginMap, requested) {
   const targetPluginsDir = join(dataDir, "plugins")
   const packageJson = join(dataDir, "package.json")
-
-  console.log(`→ Installing ${label}…\n`)
-
-  // Copy plugins
+  console.log(`\n→ Installing ${label}…\n`)
   for (const name of requested) {
-    const meta = plugins.get(name)
-    if (!meta) {
-      console.log(`  ✗ Unknown plugin: "${name}" — skipping`)
-      continue
-    }
+    const meta = pluginMap.get(name)
+    if (!meta) { console.log(`  ✗ Unknown plugin: "${name}" — skipping`); continue }
     installPlugin(meta, targetPluginsDir)
   }
-
-  // Ensure dependencies
-  let pkg: any = {}
-  if (existsSync(packageJson)) {
-    pkg = JSON.parse(readFileSync(packageJson, "utf8"))
-  }
+  let pkg = existsSync(packageJson) ? JSON.parse(readFileSync(packageJson, "utf8")) : {}
   pkg.dependencies = pkg.dependencies || {}
   if (pkg.dependencies["@opencode-ai/plugin"]) {
     console.log("  ✓ @opencode-ai/plugin already in dependencies")
@@ -133,83 +89,189 @@ function install(
     console.log("  + @opencode-ai/plugin added")
   }
   writeFileSync(packageJson, JSON.stringify(pkg, null, 2) + "\n")
-
-  // npm install
   console.log("  Installing dependencies…")
   execSync("npm install --no-audit --no-fund", { cwd: dataDir, stdio: "pipe" })
   console.log("  ✓ Dependencies installed")
-
-  // Register plugins in config
   const configPath = findConfig(configDir)
   if (configPath) {
-    for (const name of requested) {
-      if (plugins.has(name)) {
-        addPluginToConfig(configPath, name)
-      }
-    }
+    for (const name of requested) { if (pluginMap.has(name)) addPluginToConfig(configPath, name) }
   } else {
     const newPath = join(configDir, "opencode.json")
-    const names = requested.filter((n) => plugins.has(n))
+    const names = requested.filter((n) => pluginMap.has(n))
     writeFileSync(newPath, JSON.stringify({ plugin: names }, null, 2) + "\n")
     console.log(`  ✓ Created ${newPath} with: ${names.join(", ")}`)
   }
-
   console.log(`\n  Done (${label})\n`)
 }
 
-// ── CLI ───────────────────────────────────────────────────────────────
+// ── Interactive UI ────────────────────────────────────────────────────
 
-const plugins = discoverPlugins()
-
-function showHelp() {
-  console.log(`
-opencode-plugins — install OpenCode plugins from this collection.
-
-Usage: npx opencode-plugins [flags] [plugin...]
-
-Flags:
-  --local   Install into project .opencode/
-  --global  Install into ~/.config/opencode/
-  --help    Show this help
-
-Available plugins:`)
-
-  for (const [name] of plugins) {
-    console.log(`  ${name}`)
+function clearLines(n) {
+  for (let i = 0; i < n; i++) {
+    process.stdout.write("\x1b[1A\x1b[2K")
   }
-  console.log(`
-Examples:
-  npx opencode-plugins vision
-  npx opencode-plugins vision foo --local
-  npx opencode-plugins --global           # installs ALL
-`)
 }
 
-const args = process.argv.slice(2)
-
-if (args.includes("--help") || args.includes("-h")) {
-  showHelp()
-  process.exit(0)
+function drawList(choices, cursor, selected, title) {
+  let lines = 0
+  if (title) { process.stdout.write(`\n  ${title}\n\n`); lines += 2 }
+  for (let i = 0; i < choices.length; i++) {
+    const prefix = i === cursor ? "❯" : " "
+    let mark = ""
+    if (selected) {
+      mark = selected.has(i) ? "\x1b[32m●\x1b[0m" : "○"
+    }
+    const label = i === cursor ? `\x1b[1m${choices[i].label}\x1b[0m` : choices[i].label
+    const hint = choices[i].hint ? ` \x1b[2m${choices[i].hint}\x1b[0m` : ""
+    process.stdout.write(`   ${prefix} ${mark ? mark + " " : ""}${label}${hint}\n`)
+    lines++
+  }
+  return lines
 }
 
-const flags = args.filter((a) => a.startsWith("--"))
-const names = args.filter((a) => !a.startsWith("--"))
-const requested = names.length > 0 ? names : [...plugins.keys()]
+async function promptList(question, choices, opts) {
+  const multi = opts?.multi ?? false
+  let cursor = opts?.defaultIndex ?? 0
+  const selected = new Set()
 
-if (requested.length === 0) {
-  console.log("No plugins found in the package.")
+  if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  readline.emitKeypressEvents(process.stdin)
+
+  const render = () => {
+    const lines = drawList(choices, cursor, multi ? selected : undefined, question)
+    return lines
+  }
+
+  let lines = 0
+  const redraw = () => {
+    if (lines > 0) clearLines(lines)
+    lines = render()
+  }
+
+  return new Promise((resolve, _reject) => {
+    const onKey = (_str, key) => {
+      if (key.name === "up" || key.name === "k") {
+        cursor = (cursor - 1 + choices.length) % choices.length
+        redraw()
+      } else if (key.name === "down" || key.name === "j") {
+        cursor = (cursor + 1) % choices.length
+        redraw()
+      } else if (key.name === "space" && multi) {
+        if (selected.has(cursor)) selected.delete(cursor)
+        else selected.add(cursor)
+        redraw()
+      } else if (key.name === "return") {
+        if (multi) {
+          if (selected.size === 0) selected.add(cursor)
+          if (lines > 0) clearLines(lines)
+          process.stdin.setRawMode(false)
+          process.stdin.removeListener("keypress", onKey)
+          resolve([...selected].sort().map((i) => choices[i].value))
+        } else {
+          if (lines > 0) clearLines(lines)
+          process.stdin.setRawMode(false)
+          process.stdin.removeListener("keypress", onKey)
+          resolve([choices[cursor].value])
+        }
+      } else if (key.name === "c" && key.ctrl) {
+        if (lines > 0) clearLines(lines)
+        process.stdin.setRawMode(false)
+        process.stdin.removeListener("keypress", onKey)
+        console.log("\n  Cancelled.")
+        process.exit(0)
+      }
+    }
+    process.stdin.on("keypress", onKey)
+    lines = render()
+  })
+}
+
+async function promptConfirm(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => {
+    rl.question(`\n  ${question} [Y/n] `, (answer) => {
+      rl.close()
+      resolve(answer.toLowerCase() !== "n")
+    })
+  })
+}
+
+// ── Main ──────────────────────────────────────────────────────────────
+
+async function main() {
+  const pluginMap = discoverPlugins()
+  const args = process.argv.slice(2)
+
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`\nopencode-plugins — install OpenCode plugins from this collection.\n\nUsage: npx github:aadegtyarev/opencode-plugins [flags] [plugin...]\n`)
+    console.log("Flags:\n  --local   Install into project .opencode/\n  --global  Install into ~/.config/opencode/\n  --help    Show this help\n")
+    console.log("Available plugins:")
+    for (const [name] of pluginMap) console.log(`  ${name}`)
+    console.log("\nRun without arguments for interactive mode.\n")
+    process.exit(0)
+  }
+
+  if (pluginMap.size === 0) {
+    console.log("No plugins found in the package.")
+    process.exit(1)
+  }
+
+  const flags = args.filter((a) => a.startsWith("--"))
+  const names = args.filter((a) => !a.startsWith("--"))
+
+  // ── Non-interactive mode (arguments provided) ──────────────────────
+  if (names.length > 0 || flags.includes("--local") || flags.includes("--global")) {
+    const requested = names.length > 0 ? names : [...pluginMap.keys()]
+    const cwd = process.cwd()
+    const hasLocal = existsSync(join(cwd, ".opencode")) || findConfig(cwd) !== null
+    if (flags.includes("--global")) {
+      runInstall(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", pluginMap, requested)
+    } else if (flags.includes("--local")) {
+      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
+    } else if (hasLocal) {
+      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
+    } else {
+      runInstall(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", pluginMap, requested)
+    }
+    return
+  }
+
+  // ── Interactive mode (no arguments) ────────────────────────────────
+  console.log("\n  opencode-plugins installer\n")
+
+  // Step 1: choose target
+  const cwd = process.cwd()
+  const hasLocal = existsSync(join(cwd, ".opencode")) || findConfig(cwd) !== null
+  const defaultTarget = hasLocal ? 0 : 1
+  const localLabel = `Local  (.opencode/ of ${cwd.split("/").pop() || cwd})`
+  const globalLabel = `Global (~/.config/opencode/)`
+  const [target] = await promptList("Where to install?", [
+    { label: localLabel, value: "local" },
+    { label: globalLabel, value: "global" },
+  ], { defaultIndex: defaultTarget })
+
+  // Step 2: choose plugins
+  const pluginChoices = [...pluginMap.entries()].map(([name]) => ({
+    label: name,
+    value: name,
+  }))
+  const selectedPlugins = await promptList("Select plugins (Space to toggle, Enter to confirm):", pluginChoices, { multi: true })
+
+  // Step 3: summary + confirm
+  const label = target === "local" ? "local (.opencode/)" : "global (~/.config/opencode/)"
+  console.log(`\n  Target:  ${label}`)
+  console.log(`  Plugins: ${selectedPlugins.join(", ")}`)
+  const ok = await promptConfirm("Proceed with installation?")
+  if (!ok) { console.log("  Cancelled.\n"); process.exit(0) }
+
+  if (target === "local") {
+    runInstall(join(cwd, ".opencode"), cwd, label, pluginMap, selectedPlugins)
+  } else {
+    runInstall(GLOBAL_DIR, GLOBAL_DIR, label, pluginMap, selectedPlugins)
+  }
+}
+
+main().catch((err) => {
+  console.error("Error:", err)
   process.exit(1)
-}
-
-const cwd = process.cwd()
-const hasLocal = existsSync(join(cwd, ".opencode")) || findConfig(cwd) !== null
-
-if (flags.includes("--global")) {
-  install(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", plugins, requested)
-} else if (flags.includes("--local")) {
-  install(join(cwd, ".opencode"), cwd, "local (.opencode/)", plugins, requested)
-} else if (hasLocal) {
-  install(join(cwd, ".opencode"), cwd, "local (.opencode/)", plugins, requested)
-} else {
-  install(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", plugins, requested)
-}
+})
