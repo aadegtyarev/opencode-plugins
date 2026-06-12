@@ -47,7 +47,7 @@ npx opencode-plugins --help       # справка
 | `tool.execute.after` на `read` | Агент читает файл картинки |
 | `describe_image` тул | Явный вызов |
 
-**Форматы:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF, PDF (через Anthropic).
+**Форматы:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
 **Настройка (опционально):**
 

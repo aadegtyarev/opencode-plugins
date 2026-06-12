@@ -30,7 +30,7 @@ const DEFAULT_DESCRIBE_PROMPT =
   "Describe this image in detail. Focus on UI elements, error messages, code snippets, diagrams, or any text visible in the image. Be precise and thorough."
 
 const IMAGE_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico", ".tiff", ".tif", ".avif", ".pdf",
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico", ".tiff", ".tif", ".avif",
 ])
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -43,7 +43,6 @@ const MEDIA_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
   ".tiff": "image/tiff", ".tif": "image/tiff",
   ".avif": "image/avif",
-  ".pdf": "application/pdf",
 }
 
 function isImagePath(filePath: string): boolean {
@@ -62,7 +61,7 @@ function extractBase64FromDataUrl(url: string): { base64: string; mime: string }
   return { mime: match[1], base64: match[2] }
 }
 
-const IMAGE_MIME_PREFIXES = ["image/", "application/pdf"]
+const IMAGE_MIME_PREFIXES = ["image/"]
 
 function isImageMime(mime: string): boolean {
   return IMAGE_MIME_PREFIXES.some((p) => mime.startsWith(p))
