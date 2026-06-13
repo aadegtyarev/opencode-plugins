@@ -53,13 +53,12 @@ Multimodality for any text model via a separate vision model.
 {
   "provider": "openrouter",
   "model": "qwen/qwen3.7-plus",
-  "baseUrl": "https://openrouter.ai/api/v1",
   "enabled": true
 }
 ```
 
-API key is read automatically from opencode's auth storage — no secrets in config.
-Use `/ad-vision` command or env var `VISION_ENABLED=false` to disable.
+`provider` and `baseUrl` are derived from opencode config — model is the only required field.
+Use `/ad-vision` command for setup, `VISION_ENABLED=false` env to disable.
 
 **Commands:**
 

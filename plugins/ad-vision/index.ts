@@ -309,22 +309,32 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
     if (cfg.model) {
       const pid = cfg.provider || "openai"
       const builtin = BUILTIN_PROVIDERS[pid]
-      // Read API key from auth.json (opencode stores keys there)
       configPromise = (async () => {
         let key = ""
+        let baseUrl = cfg.baseUrl || builtin?.api || ""
         try {
           const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
           if (await authFile.exists()) {
             const auth = await authFile.json()
             key = auth[pid]?.key || ""
           }
+          // Also try to get baseUrl from opencode provider config
+          if (!baseUrl) {
+            try {
+              const result = await ctx.client.config.providers()
+              const all = result?.data?.providers || result?.providers || []
+              const p = all.find((x: any) => x.id === pid)
+              if (p) baseUrl = extractProviderBaseUrl(p)
+            } catch { }
+          }
         } catch { }
         if (!key) key = process.env.MULTIMODAL_API_KEY || ""
+        if (!baseUrl) baseUrl = "https://api.openai.com/v1"
         return {
           providerId: pid,
           model: cfg.model,
           apiKey: key,
-          baseUrl: cfg.baseUrl || builtin?.api || "https://api.openai.com/v1",
+          baseUrl,
           isAnthropic: builtin?.isAnthropic || false,
         }
       })()
