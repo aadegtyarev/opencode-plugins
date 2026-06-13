@@ -76,6 +76,7 @@ const BUILTIN_PROVIDERS: Record<string, { api: string; isAnthropic: boolean }> =
 
 function extractProviderApiKey(provider: any): string {
   if (provider.options?.apiKey) return provider.options.apiKey
+  if (provider.request?.body?.apiKey) return provider.request.body.apiKey
   if (Array.isArray(provider.env)) {
     for (const envVar of provider.env) {
       const val = process.env[envVar]
@@ -91,7 +92,8 @@ function extractProviderApiKey(provider: any): string {
 
 function extractProviderBaseUrl(provider: any): string {
   if (provider.options?.baseURL) return provider.options.baseURL
-  if (provider.api) return provider.api
+  if (typeof provider.api === "string") return provider.api
+  if (provider.api?.url) return provider.api.url
   const builtin = BUILTIN_PROVIDERS[provider.id]
   if (builtin) return builtin.api
   return ""
@@ -100,8 +102,8 @@ function extractProviderBaseUrl(provider: any): string {
 function detectIsAnthropic(provider: any): boolean {
   const builtin = BUILTIN_PROVIDERS[provider.id]
   if (builtin) return builtin.isAnthropic
-  const apiField = provider.api || provider.options?.api
-  if (typeof apiField === "string" && apiField.includes("anthropic")) return true
+  const apiField = typeof provider.api === "string" ? provider.api : provider.api?.url || ""
+  if (apiField.includes("anthropic")) return true
   return false
 }
 
