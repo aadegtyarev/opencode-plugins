@@ -80,11 +80,7 @@ async function loadConfigFile(dir: string): Promise<Partial<ResolvedConfig> | nu
   } catch { return null }
 }
 
-async function saveConfigFile(dir: string, config: ResolvedConfig) {
-  try {
-    await Bun.write(`${dir}/.opencode/vision.json`, JSON.stringify(config, null, 2) + "\n")
-  } catch { }
-}
+function isSessionModelMultimodal(modelID) {
   if (!modelID) return false
   const lower = modelID.toLowerCase()
   return MULTIMODAL_PATTERNS.some((p) => lower.includes(p))
@@ -291,12 +287,9 @@ export const VisionPlugin = async (ctx: any, options: any) => {
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  // Manual override — set by configure_vision tool, takes precedence over auto-discovery
-  let manualConfig: ResolvedConfig | null = null
   const projectDir = ctx.directory || ""
   const getConfig = async (): Promise<ResolvedConfig> => {
-    if (manualConfig) return manualConfig
-    // Try saved config file first
+    // Try saved config file first (from installer)
     const saved = await loadConfigFile(projectDir)
     if (saved?.apiKey && saved?.model) {
       return {
@@ -331,80 +324,6 @@ export const VisionPlugin = async (ctx: any, options: any) => {
 
   return {
     tool: {
-      configure_vision: tool({
-        description:
-          "Configure which vision provider and model to use for image descriptions. " +
-          "Call this FIRST before any image tools. Lists available providers or sets a specific one.",
-        args: {
-          provider: tool.schema.string().optional()
-            .describe("Provider ID (e.g. openrouter, openai, anthropic). Omit to list available providers."),
-          model: tool.schema.string().optional()
-            .describe("Model ID to use for vision (e.g. google/gemini-2.0-flash-exp:free). Omit to auto-select."),
-        },
-        async execute(args: any, _context: any) {
-          if (args.provider) {
-            const pid = args.provider
-            const builtin = BUILTIN_PROVIDERS[pid]
-            if (!builtin) return `Unknown provider: "${pid}". Known: ${Object.keys(BUILTIN_PROVIDERS).join(", ")}.`
-            const model = args.model || DEFAULT_VISION_MODELS[pid]?.[0] || "gpt-4o"
-            let apiKey = ""
-            let baseUrl = builtin.api
-            let isAnthropic = builtin.isAnthropic
-
-            // Try auth.json first (fast, no network)
-            try {
-              const authPath = `${process.env.HOME}/.local/share/opencode/auth.json`
-              const authFile = Bun.file(authPath)
-              if (await authFile.exists()) {
-                const auth = await authFile.json()
-                if (auth[pid]?.key) apiKey = auth[pid].key
-              }
-            } catch { }
-
-            // Fallback: try opencode providers API
-            if (!apiKey) {
-              try {
-                const result = await ctx.client.config.providers()
-                const allProviders = result?.data?.providers || result?.providers || []
-                const provider = allProviders.find((p: any) => p.id === pid)
-                if (provider) {
-                  apiKey = extractProviderApiKey(provider)
-                  baseUrl = extractProviderBaseUrl(provider)
-                  isAnthropic = detectIsAnthropic(provider)
-                }
-              } catch { }
-            }
-
-            if (!apiKey) {
-              apiKey = process.env.MULTIMODAL_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ""
-            }
-            if (!apiKey) return `No API key found for "${pid}". Run "opencode providers" to add one, or set MULTIMODAL_API_KEY env var.`
-
-            manualConfig = { providerId: pid, model, apiKey, baseUrl, isAnthropic }
-            saveConfigFile(projectDir, manualConfig)
-            showToast(`Vision configured: ${pid}/${model} (v${VERSION})`, "info", 4000)
-            return `Vision configured: provider=${pid}, model=${model}. Saved to .opencode/vision.json — persists across restarts.`
-          }
-
-          // List available providers
-          const lines: string[] = ["Available vision providers:"]
-          try {
-            const result = await ctx.client.config.providers()
-            const allProviders = result?.data?.providers || result?.providers || []
-            for (const p of allProviders) {
-              const key = extractProviderApiKey(p)
-              const defaults = DEFAULT_VISION_MODELS[p.id] || []
-              const status = key ? "✓ key found" : "✗ no key"
-              const models = defaults.length > 0 ? `  defaults: ${defaults.join(", ")}` : ""
-              lines.push(`  ${p.id} (${status})${models}`)
-            }
-          } catch {
-            lines.push("  (could not query providers)")
-          }
-          lines.push("", "Use: configure_vision { provider: \"openrouter\", model: \"qwen/qwen-vl-max\" }")
-          return lines.join("\n")
-        },
-      }),
       describe_image: tool({
         description:
           "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model. " +
