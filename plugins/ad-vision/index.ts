@@ -307,8 +307,11 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
   }
 
   // Lazy config — reads ad-vision.json on first use, picks up changes from /ad-vision
+  // Cache resolved config to avoid re-reading auth.json on every message
+  let cachedConfig: ResolvedConfig | null = null
   let configPromise: Promise<ResolvedConfig> | null = null
   const getConfig = async (): Promise<ResolvedConfig> => {
+    if (cachedConfig) return cachedConfig
     const cfg = await readCfg()
     if (cfg.model) {
       const pid = cfg.provider || "openai"
@@ -324,16 +327,18 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
       } catch { }
       if (!key) key = process.env.MULTIMODAL_API_KEY || ""
       if (!baseUrl) baseUrl = "https://api.openai.com/v1"
-      return {
+      cachedConfig = {
         providerId: pid,
         model: cfg.model,
         apiKey: key,
         baseUrl,
         isAnthropic: builtin?.isAnthropic || false,
       }
+      return cachedConfig
     }
     if (!configPromise) configPromise = resolveConfig(opts, ctx.client, {})
-    return configPromise
+    cachedConfig = await configPromise
+    return cachedConfig
   }
 
   const showToast = async (msg: string, variant: string, duration: number) => {
@@ -373,7 +378,7 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
       }),
     },
     "chat.message": async (_input: any, output: any) => {
-      // Skip if the session model already supports images natively
+      try {
       if (isSessionModelMultimodal(_input.model?.modelID)) return
       const config = await getConfig()
       if (!config.apiKey) return
@@ -406,8 +411,11 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
             synthetic: true,
           })
         } catch (err) {
-          console.error(`[multimodal-bridge] Failed to describe pasted image:`, err)
+          console.error(`[ad-vision] Failed to describe pasted image:`, err)
         }
+      }
+      } catch (err) {
+        console.error("[ad-vision] chat.message hook error:", err)
       }
     },
     "tool.execute.after": async (input: any, output: any) => {
