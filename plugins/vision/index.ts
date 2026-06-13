@@ -342,9 +342,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
             .describe("Model ID to use for vision (e.g. google/gemini-2.0-flash-exp:free). Omit to auto-select."),
         },
         async execute(args: any, _context: any) {
-          const config = await getConfig()
           if (args.provider) {
-            // Set manual config
             const pid = args.provider
             const builtin = BUILTIN_PROVIDERS[pid]
             if (!builtin) return `Unknown provider: "${pid}". Known: ${Object.keys(BUILTIN_PROVIDERS).join(", ")}.`
@@ -353,22 +351,34 @@ export const VisionPlugin = async (ctx: any, options: any) => {
             let baseUrl = builtin.api
             let isAnthropic = builtin.isAnthropic
 
-            // Try to get api key from opencode providers
+            // Try auth.json first (fast, no network)
             try {
-              const result = await ctx.client.config.providers()
-              const allProviders = result?.data?.providers || result?.providers || []
-              const provider = allProviders.find((p: any) => p.id === pid)
-              if (provider) {
-                apiKey = extractProviderApiKey(provider)
-                baseUrl = extractProviderBaseUrl(provider)
-                isAnthropic = detectIsAnthropic(provider)
+              const authPath = `${process.env.HOME}/.local/share/opencode/auth.json`
+              const authFile = Bun.file(authPath)
+              if (await authFile.exists()) {
+                const auth = await authFile.json()
+                if (auth[pid]?.key) apiKey = auth[pid].key
               }
             } catch { }
+
+            // Fallback: try opencode providers API
+            if (!apiKey) {
+              try {
+                const result = await ctx.client.config.providers()
+                const allProviders = result?.data?.providers || result?.providers || []
+                const provider = allProviders.find((p: any) => p.id === pid)
+                if (provider) {
+                  apiKey = extractProviderApiKey(provider)
+                  baseUrl = extractProviderBaseUrl(provider)
+                  isAnthropic = detectIsAnthropic(provider)
+                }
+              } catch { }
+            }
 
             if (!apiKey) {
               apiKey = process.env.MULTIMODAL_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ""
             }
-            if (!apiKey) return `No API key found for "${pid}". Set MULTIMODAL_API_KEY env var or add the provider in opencode.`
+            if (!apiKey) return `No API key found for "${pid}". Run "opencode providers" to add one, or set MULTIMODAL_API_KEY env var.`
 
             manualConfig = { providerId: pid, model, apiKey, baseUrl, isAnthropic }
             saveConfigFile(projectDir, manualConfig)
