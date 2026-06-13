@@ -77,6 +77,25 @@ function isSessionModelMultimodal(modelID) {
   return MULTIMODAL_PATTERNS.some((p) => lower.includes(p))
 }
 
+async function loadEnvFile(path: string): Promise<Record<string, string>> {
+  const vars: Record<string, string> = {}
+  try {
+    const file = Bun.file(path)
+    if (!(await file.exists())) return vars
+    const content = await file.text()
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith("#")) continue
+      const eq = trimmed.indexOf("=")
+      if (eq === -1) continue
+      const key = trimmed.slice(0, eq).trim()
+      const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "")
+      vars[key] = val
+    }
+  } catch { }
+  return vars
+}
+
 function isImageMime(mime: string): boolean {
   return IMAGE_MIME_PREFIXES.some((p) => mime.startsWith(p))
 }
@@ -147,7 +166,8 @@ function pickVisionModel(provider: any): string | null {
   return null
 }
 
-async function resolveConfig(options: PluginOptions, client: any): Promise<ResolvedConfig> {
+async function resolveConfig(options: PluginOptions, client: any, envFile: Record<string, string> = {}): Promise<ResolvedConfig> {
+  const env = (key: string, def: string) => envFile[key] || process.env[key] || def
   let allProviders: any[] = []
   try {
     const result = await client.config.providers()
@@ -184,9 +204,9 @@ async function resolveConfig(options: PluginOptions, client: any): Promise<Resol
     }
   }
 
-  const apiKey = process.env.MULTIMODAL_API_KEY || ""
-  const baseUrl = process.env.MULTIMODAL_BASE_URL || "https://api.openai.com/v1"
-  const model = process.env.MULTIMODAL_MODEL || "gpt-4o"
+  const apiKey = env("MULTIMODAL_API_KEY", "")
+  const baseUrl = env("MULTIMODAL_BASE_URL", "https://api.openai.com/v1")
+  const model = env("MULTIMODAL_MODEL", "gpt-4o")
   return { providerId: "openai", model, apiKey, baseUrl, isAnthropic: false }
 }
 
@@ -274,20 +294,39 @@ async function describeFile(filePath: string, config: ResolvedConfig, prompt?: s
 }
 
 export const VisionPlugin = async (ctx: any, options: any) => {
-  const disabledEnv = process.env.VISION_ENABLED
-  if (disabledEnv === "false" || disabledEnv === "0") {
-    console.log("[vision] Disabled via VISION_ENABLED=false")
-    return { tool: {} }
-  }
-
   const opts = (options || {}) as PluginOptions
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
+  // Load .env file: local overrides global
+  const [globalEnv, localEnv] = await Promise.all([
+    loadEnvFile(`${process.env.HOME}/.config/opencode/.env`),
+    loadEnvFile(`${ctx.directory}/.opencode/.env`),
+  ])
+  const envFromFile = { ...globalEnv, ...localEnv }
+
+  // Check if disabled (env var or .env file)
+  const enabled = envFromFile.VISION_ENABLED || process.env.VISION_ENABLED
+  if (enabled === "false" || enabled === "0") {
+    console.log("[vision] Disabled via VISION_ENABLED=false")
+    return { tool: {} }
+  }
+
   // Lazy config — resolves on first use, prevents blocking at startup
   let configPromise: Promise<ResolvedConfig> | null = null
   const getConfig = () => {
-    if (!configPromise) configPromise = resolveConfig(opts, ctx.client)
+    if (envFromFile.MULTIMODAL_API_KEY && envFromFile.MULTIMODAL_MODEL) {
+      const pid = envFromFile.MULTIMODAL_PROVIDER || "openai"
+      const builtin = BUILTIN_PROVIDERS[pid]
+      return Promise.resolve({
+        providerId: pid,
+        model: envFromFile.MULTIMODAL_MODEL,
+        apiKey: envFromFile.MULTIMODAL_API_KEY,
+        baseUrl: envFromFile.MULTIMODAL_BASE_URL || builtin?.api || "https://api.openai.com/v1",
+        isAnthropic: builtin?.isAnthropic || false,
+      })
+    }
+    if (!configPromise) configPromise = resolveConfig(opts, ctx.client, envFromFile)
     return configPromise
   }
 
@@ -310,6 +349,20 @@ export const VisionPlugin = async (ctx: any, options: any) => {
   })
 
   return {
+    command: {
+      vision_setup: {
+        template: "Guide the user through vision plugin setup. Read ~/.config/opencode/.env and .opencode/.env files. Tell them to set: MULTIMODAL_API_KEY, MULTIMODAL_MODEL, MULTIMODAL_BASE_URL in .opencode/.env or ~/.bashrc. Show current config if any.",
+        description: "Configure vision provider and model",
+      },
+      vision_status: {
+        template: "Show current vision plugin status using describe_image tool to check if it works. Read .opencode/.env and ~/.config/opencode/.env for MULTIMODAL_* variables.",
+        description: "Show vision plugin status and config",
+      },
+      vision_toggle: {
+        template: "Toggle vision plugin on/off. Read .opencode/.env, find VISION_ENABLED line. If false, change to true. If true or missing, set VISION_ENABLED=false. Use edit tool to modify .opencode/.env.",
+        description: "Enable or disable the vision plugin",
+      },
+    },
     tool: {
       describe_image: tool({
         description:
