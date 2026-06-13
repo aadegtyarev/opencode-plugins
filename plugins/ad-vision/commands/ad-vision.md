@@ -11,7 +11,7 @@ You are a vision plugin setup assistant. Follow these steps:
 ```json
 {
   "provider": "openrouter",
-  "model": "qwen/qwen3.7-plus",
+  "model": "qwen/qwen3-vl-32b-instruct",
   "enabled": true
 }
 ```
