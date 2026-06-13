@@ -50,20 +50,19 @@ Multimodality for any text model via a separate vision model.
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Config:** the plugin auto-discovers a vision-capable provider from your opencode config. To use a specific model, call the built-in tool in chat:
+**Config:** auto-discovers a vision provider from your opencode config. To set a specific model:
 
 ```
 configure_vision { provider: "openrouter", model: "qwen/qwen-vl-max" }
 ```
 
-Without arguments, it lists available providers and their keys. The configuration is saved to `.opencode/vision.json` and persists across restarts.
-
-Or use environment variables:
+Or use environment variables (persists across sessions):
 
 ```bash
 export MULTIMODAL_API_KEY=sk-...       # API key
 export MULTIMODAL_MODEL=gpt-4o         # model ID
-export MULTIMODAL_BASE_URL=https://...  # API base URL (optional)
+export MULTIMODAL_BASE_URL=https://...  # optional, API base URL
+export VISION_ENABLED=true             # enable (remove or set to false to disable)
 ```
 
 ---

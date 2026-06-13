@@ -71,15 +71,6 @@ const MULTIMODAL_PATTERNS = [
   "vision", "vl-", "-vl",
 ]
 
-async function loadConfigFile(dir: string): Promise<Partial<ResolvedConfig> | null> {
-  try {
-    const path = `${dir}/.opencode/vision.json`
-    const file = Bun.file(path)
-    if (!(await file.exists())) return null
-    return await file.json()
-  } catch { return null }
-}
-
 function isSessionModelMultimodal(modelID) {
   if (!modelID) return false
   const lower = modelID.toLowerCase()
@@ -283,23 +274,19 @@ async function describeFile(filePath: string, config: ResolvedConfig, prompt?: s
 }
 
 export const VisionPlugin = async (ctx: any, options: any) => {
+  const disabledEnv = process.env.VISION_ENABLED
+  if (disabledEnv === "false" || disabledEnv === "0") {
+    console.log("[vision] Disabled via VISION_ENABLED=false")
+    return { tool: {} }
+  }
+
   const opts = (options || {}) as PluginOptions
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  const projectDir = ctx.directory || ""
-  const getConfig = async (): Promise<ResolvedConfig> => {
-    // Try saved config file first (from installer)
-    const saved = await loadConfigFile(projectDir)
-    if (saved?.apiKey && saved?.model) {
-      return {
-        providerId: saved.providerId || "openai",
-        model: saved.model,
-        apiKey: saved.apiKey,
-        baseUrl: saved.baseUrl || "https://api.openai.com/v1",
-        isAnthropic: saved.isAnthropic || false,
-      }
-    }
+  // Lazy config — resolves on first use, prevents blocking at startup
+  let configPromise: Promise<ResolvedConfig> | null = null
+  const getConfig = () => {
     if (!configPromise) configPromise = resolveConfig(opts, ctx.client)
     return configPromise
   }
@@ -324,6 +311,48 @@ export const VisionPlugin = async (ctx: any, options: any) => {
 
   return {
     tool: {
+      configure_vision: tool({
+        description:
+          "Set the vision model used for image descriptions. " +
+          "Use only when user asks to configure vision, change model, or setup image support.",
+        args: {
+          provider: tool.schema.string()
+            .describe("Provider ID: openrouter, openai, anthropic, groq, together"),
+          model: tool.schema.string().optional()
+            .describe("Model ID. If omitted, a default vision model is used."),
+        },
+        async execute(args: any, _context: any) {
+          const pid = args.provider
+          if (!pid || !BUILTIN_PROVIDERS[pid]) {
+            return `Usage: configure_vision { provider: "openrouter", model: "qwen/qwen-vl-max" }\nKnown providers: ${Object.keys(BUILTIN_PROVIDERS).filter(k => DEFAULT_VISION_MODELS[k]?.length).join(", ")}`
+          }
+          const model = args.model || DEFAULT_VISION_MODELS[pid]?.[0] || "gpt-4o"
+          let apiKey = ""
+
+          // Read key from opencode auth storage
+          try {
+            const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
+            if (await authFile.exists()) {
+              const auth = await authFile.json()
+              if (auth[pid]?.key) apiKey = auth[pid].key
+            }
+          } catch { }
+
+          if (!apiKey) apiKey = process.env.MULTIMODAL_API_KEY || ""
+
+          if (apiKey) {
+            process.env.MULTIMODAL_API_KEY = apiKey
+            process.env.MULTIMODAL_MODEL = model
+            const builtin = BUILTIN_PROVIDERS[pid]
+            process.env.MULTIMODAL_BASE_URL = builtin.api
+            // Reset config so it re-reads env vars
+            configPromise = null
+            showToast(`Vision: ${pid}/${model} (v${VERSION})`, "info", 4000)
+            return `Vision set to ${pid}/${model}. Active for this session.\nTo persist, add to ~/.bashrc:\n  export MULTIMODAL_API_KEY=<key>\n  export MULTIMODAL_MODEL=${model}\n  export MULTIMODAL_BASE_URL=${builtin.api}`
+          }
+          return `No API key found for ${pid}. Set MULTIMODAL_API_KEY or add ${pid} in "opencode providers".`
+        },
+      }),
       describe_image: tool({
         description:
           "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model. " +

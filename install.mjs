@@ -220,15 +220,14 @@ async function configureVision(dataDir) {
   }
 
   // Write config
-  const cfgDir = dataDir
-  if (!existsSync(cfgDir)) mkdirSync(cfgDir, { recursive: true })
-  writeFileSync(join(cfgDir, "vision.json"), JSON.stringify({
-    providerId: pid,
-    model: finalModel,
-    apiKey: provider.key,
-    isAnthropic: pid === "anthropic",
-  }, null, 2) + "\n")
-  console.log(`  ✓ Saved ${cfgDir}/vision.json (${pid}/${finalModel})\n`)
+  console.log(`\n  Add to your shell config (~/.bashrc, ~/.zshrc) or run before opencode:\n`)
+  console.log(`  export VISION_ENABLED=true`)
+  console.log(`  export MULTIMODAL_API_KEY=<your-${pid}-key>   # already detected from auth.json`)
+  console.log(`  export MULTIMODAL_MODEL=${finalModel}`)
+  if (pid !== "openai" && pid !== "anthropic") {
+    console.log(`  export MULTIMODAL_BASE_URL=https://...       # provider's API base URL`)
+  }
+  console.log("")
 }
 
 async function promptText(question) {
