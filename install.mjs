@@ -7,6 +7,7 @@ import { homedir } from "node:os"
 import { createInterface, emitKeypressEvents } from "node:readline"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const PKG = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf8"))
 const GLOBAL_DIR = join(homedir(), ".config", "opencode")
 const PLUGINS_SRC = join(__dirname, "plugins")
 
@@ -171,7 +172,7 @@ async function main() {
   const args = process.argv.slice(2)
 
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`\nopencode-plugins — install OpenCode plugins from this collection.\n\nUsage: npx github:aadegtyarev/opencode-plugins [flags] [plugin...]\n`)
+    console.log(`\nopencode-plugins v${PKG.version} — install OpenCode plugins from this collection.\n\nUsage: npx github:aadegtyarev/opencode-plugins [flags] [plugin...]\n`)
     console.log("Flags:\n  --local   Install into project .opencode/\n  --global  Install into ~/.config/opencode/\n  --help    Show this help\n")
     console.log("Available plugins:")
     for (const [name] of pluginMap) console.log(`  ${name}`)
@@ -207,7 +208,7 @@ async function main() {
   }
 
   // ── Interactive mode (no arguments) ────────────────────────────────
-  console.log("\n  opencode-plugins installer\n")
+  console.log(`\n  opencode-plugins installer  v${PKG.version}\n`)
 
   // Step 1: choose target
   const cwd = process.cwd()

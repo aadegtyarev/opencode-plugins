@@ -2,6 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import type { FilePart } from "@opencode-ai/sdk"
 import { tool } from "@opencode-ai/plugin"
 
+const VERSION = "0.2.0"
+
 interface PluginOptions {
   provider?: string
   model?: string
@@ -269,7 +271,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       )
       showToast("[vision] No API key configured", "warning", 8000)
     } else if (!opts.provider) {
-      showToast(`Vision: ${config.providerId}/${config.model}`, "info", 4000)
+      showToast(`Vision: ${config.providerId}/${config.model} (v${VERSION})`, "info", 4000)
     }
   })
 
