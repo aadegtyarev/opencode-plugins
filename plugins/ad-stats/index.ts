@@ -38,11 +38,13 @@ export const AdStatsPlugin: Plugin = async () => {
   const lastValues = new Map<string, { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number; cost: number }>()
   let eventCount = 0
   let msgCount = 0
+  const receivedTypes = new Set<string>()
   
   return {
     event: async ({ event }) => {
       try {
         eventCount++
+        receivedTypes.add(event.type)
         if (event.type === "message.updated") {
         const msg = event.properties.info
         msgCount++
@@ -92,7 +94,7 @@ export const AdStatsPlugin: Plugin = async () => {
           try {
             const session = storage.get(context.sessionID)
           if (!session || session.size === 0) {
-            return `No token data yet. Events received: ${eventCount} total, ${msgCount} messages. Send a message and wait for a response.`
+            return `No token data yet. Events: ${eventCount} total (${[...receivedTypes].join(", ") || "none"}), ${msgCount} messages.`
           }
 
           let totalInput = 0
