@@ -71,7 +71,20 @@ const MULTIMODAL_PATTERNS = [
   "vision", "vl-", "-vl",
 ]
 
-function isSessionModelMultimodal(modelID?: string): boolean {
+async function loadConfigFile(dir: string): Promise<Partial<ResolvedConfig> | null> {
+  try {
+    const path = `${dir}/.opencode/vision.json`
+    const file = Bun.file(path)
+    if (!(await file.exists())) return null
+    return await file.json()
+  } catch { return null }
+}
+
+async function saveConfigFile(dir: string, config: ResolvedConfig) {
+  try {
+    await Bun.write(`${dir}/.opencode/vision.json`, JSON.stringify(config, null, 2) + "\n")
+  } catch { }
+}
   if (!modelID) return false
   const lower = modelID.toLowerCase()
   return MULTIMODAL_PATTERNS.some((p) => lower.includes(p))
@@ -280,8 +293,20 @@ export const VisionPlugin = async (ctx: any, options: any) => {
 
   // Manual override — set by configure_vision tool, takes precedence over auto-discovery
   let manualConfig: ResolvedConfig | null = null
-  const getConfig = () => {
-    if (manualConfig) return Promise.resolve(manualConfig)
+  const projectDir = ctx.directory || ""
+  const getConfig = async (): Promise<ResolvedConfig> => {
+    if (manualConfig) return manualConfig
+    // Try saved config file first
+    const saved = await loadConfigFile(projectDir)
+    if (saved?.apiKey && saved?.model) {
+      return {
+        providerId: saved.providerId || "openai",
+        model: saved.model,
+        apiKey: saved.apiKey,
+        baseUrl: saved.baseUrl || "https://api.openai.com/v1",
+        isAnthropic: saved.isAnthropic || false,
+      }
+    }
     if (!configPromise) configPromise = resolveConfig(opts, ctx.client)
     return configPromise
   }
@@ -346,8 +371,9 @@ export const VisionPlugin = async (ctx: any, options: any) => {
             if (!apiKey) return `No API key found for "${pid}". Set MULTIMODAL_API_KEY env var or add the provider in opencode.`
 
             manualConfig = { providerId: pid, model, apiKey, baseUrl, isAnthropic }
-            showToast(`Vision configured: ${pid}/${model}`, "info", 4000)
-            return `Vision configured: provider=${pid}, model=${model}. Image descriptions will use this from now on.`
+            saveConfigFile(projectDir, manualConfig)
+            showToast(`Vision configured: ${pid}/${model} (v${VERSION})`, "info", 4000)
+            return `Vision configured: provider=${pid}, model=${model}. Saved to .opencode/vision.json — persists across restarts.`
           }
 
           // List available providers
