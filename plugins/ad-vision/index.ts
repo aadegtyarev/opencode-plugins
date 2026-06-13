@@ -77,25 +77,6 @@ function isSessionModelMultimodal(modelID) {
   return MULTIMODAL_PATTERNS.some((p) => lower.includes(p))
 }
 
-async function loadEnvFile(path: string): Promise<Record<string, string>> {
-  const vars: Record<string, string> = {}
-  try {
-    const file = Bun.file(path)
-    if (!(await file.exists())) return vars
-    const content = await file.text()
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith("#")) continue
-      const eq = trimmed.indexOf("=")
-      if (eq === -1) continue
-      const key = trimmed.slice(0, eq).trim()
-      const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "")
-      vars[key] = val
-    }
-  } catch { }
-  return vars
-}
-
 function isImageMime(mime: string): boolean {
   return IMAGE_MIME_PREFIXES.some((p) => mime.startsWith(p))
 }
@@ -293,68 +274,63 @@ async function describeFile(filePath: string, config: ResolvedConfig, prompt?: s
   return describeBase64(base64, getMediaType(filePath), config, prompt)
 }
 
+async function loadPluginConfig(dir: string): Promise<Record<string, string> | null> {
+  try {
+    const file = Bun.file(`${dir}/ad-vision.json`)
+    if (!(await file.exists())) return null
+    return await file.json()
+  } catch { return null }
+}
+
 export const AdVisionPlugin = async (ctx: any, options: any) => {
   const opts = (options || {}) as PluginOptions
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  // Load .env file: local overrides global
-  const [globalEnv, localEnv] = await Promise.all([
-    loadEnvFile(`${process.env.HOME}/.config/opencode/.env`),
-    loadEnvFile(`${ctx.directory}/.opencode/.env`),
+  // Load config: local overrides global. Also fallback to .env for compat.
+  const [globalCfg, localCfg] = await Promise.all([
+    loadPluginConfig(`${process.env.HOME}/.config/opencode`),
+    loadPluginConfig(`${ctx.directory}/.opencode`),
   ])
-  const envFromFile = { ...globalEnv, ...localEnv }
+  const cfg = { enabled: "true", ...globalCfg, ...localCfg }
 
-  // Check if disabled (env var or .env file)
-  const enabled = envFromFile.VISION_ENABLED || process.env.VISION_ENABLED
-  if (enabled === "false" || enabled === "0") {
-    console.log("[vision] Disabled via VISION_ENABLED=false")
+  // Support VISION_ENABLED env var as override
+  if (process.env.VISION_ENABLED === "false" || process.env.VISION_ENABLED === "0") cfg.enabled = "false"
+  if (process.env.VISION_ENABLED === "true" || process.env.VISION_ENABLED === "1") cfg.enabled = "true"
+
+  if (cfg.enabled === "false") {
+    console.log("[ad-vision] Disabled")
     return { tool: {} }
   }
 
   // Lazy config — resolves on first use, prevents blocking at startup
   let configPromise: Promise<ResolvedConfig> | null = null
   const getConfig = () => {
-    if (envFromFile.MULTIMODAL_MODEL) {
-      const pid = envFromFile.MULTIMODAL_PROVIDER || "openai"
+    if (cfg.model) {
+      const pid = cfg.provider || "openai"
       const builtin = BUILTIN_PROVIDERS[pid]
       // Read API key from auth.json (opencode stores keys there)
-      let apiKey = envFromFile.MULTIMODAL_API_KEY || ""
-      if (!apiKey) {
+      configPromise = (async () => {
+        let key = ""
         try {
           const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
-          // Synchronous-ish: we're in a lazy getter, can use await
-        } catch { }
-        // Use async key resolution in background
-        configPromise = (async () => {
-          let key = ""
-          try {
-            const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
-            if (await authFile.exists()) {
-              const auth = await authFile.json()
-              key = auth[pid]?.key || ""
-            }
-          } catch { }
-          if (!key) key = process.env.MULTIMODAL_API_KEY || ""
-          return {
-            providerId: pid,
-            model: envFromFile.MULTIMODAL_MODEL,
-            apiKey: key,
-            baseUrl: envFromFile.MULTIMODAL_BASE_URL || builtin?.api || "https://api.openai.com/v1",
-            isAnthropic: builtin?.isAnthropic || false,
+          if (await authFile.exists()) {
+            const auth = await authFile.json()
+            key = auth[pid]?.key || ""
           }
-        })()
-        return configPromise
-      }
-      return Promise.resolve({
-        providerId: pid,
-        model: envFromFile.MULTIMODAL_MODEL,
-        apiKey,
-        baseUrl: envFromFile.MULTIMODAL_BASE_URL || builtin?.api || "https://api.openai.com/v1",
-        isAnthropic: builtin?.isAnthropic || false,
-      })
+        } catch { }
+        if (!key) key = process.env.MULTIMODAL_API_KEY || ""
+        return {
+          providerId: pid,
+          model: cfg.model,
+          apiKey: key,
+          baseUrl: cfg.baseUrl || builtin?.api || "https://api.openai.com/v1",
+          isAnthropic: builtin?.isAnthropic || false,
+        }
+      })()
+      return configPromise
     }
-    if (!configPromise) configPromise = resolveConfig(opts, ctx.client, envFromFile)
+    if (!configPromise) configPromise = resolveConfig(opts, ctx.client, {})
     return configPromise
   }
 

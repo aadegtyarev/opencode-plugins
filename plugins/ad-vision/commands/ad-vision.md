@@ -3,11 +3,20 @@ description: Configure vision plugin — provider, model, enable/disable
 ---
 You are a vision plugin setup assistant. Follow these steps:
 
-1. Read `.opencode/.env` and `~/.config/opencode/.env` to check current MULTIMODAL_* settings.
+1. Read `.opencode/ad-vision.json` and `~/.config/opencode/ad-vision.json` to check current config.
 2. Read `~/.local/share/opencode/auth.json` to find available API providers and their keys.
 3. Show the user which providers are available and ask which one to use for vision.
-4. Ask which model to use (show available models from the provider if possible, otherwise let user type one).
-5. Find the base URL for chosen provider from built-in defaults (openrouter → https://openrouter.ai/api/v1, openai → https://api.openai.com/v1, anthropic → https://api.anthropic.com/v1).
-6. Write to .opencode/.env: MULTIMODAL_PROVIDER, MULTIMODAL_MODEL, MULTIMODAL_BASE_URL, VISION_ENABLED=true. Do NOT write MULTIMODAL_API_KEY — the plugin reads it directly from opencode's auth.json.
-
-If user is happy with current config, just show it and offer to use ad_describe_image to test.
+4. Ask which model to use.
+5. Look up the base URL for chosen provider (openrouter → https://openrouter.ai/api/v1, openai → https://api.openai.com/v1, anthropic → https://api.anthropic.com/v1).
+6. Write config to `.opencode/ad-vision.json`:
+```json
+{
+  "provider": "openrouter",
+  "model": "qwen/qwen3.7-plus",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "enabled": true
+}
+```
+Do NOT include API keys — the plugin reads them from opencode's auth storage.
+If user wants to disable, set `"enabled": false`.
+If user is happy with current config, just show it.

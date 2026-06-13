@@ -1,8 +1,6 @@
 ---
 description: Toggle vision plugin on/off
 ---
-Read `.opencode/.env`. Find VISION_ENABLED line.
-If VISION_ENABLED=true → change to VISION_ENABLED=false.
-If VISION_ENABLED=false or missing → set VISION_ENABLED=true.
-Use the edit tool to modify/create the file.
-Report the new state to the user.
+Read `.opencode/ad-vision.json`. Toggle `"enabled"` between true/false using the edit tool.
+If file doesn't exist, create it with `{ "enabled": false }`.
+Report the new state.

@@ -47,17 +47,19 @@ Multimodality for any text model via a separate vision model.
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Config:** `.opencode/.env` or `~/.config/opencode/.env`:
+**Config:** `.opencode/ad-vision.json` (local) or `~/.config/opencode/ad-vision.json` (global):
 
-```env
-# ad-vision plugin config (API key auto-read from opencode auth)
-MULTIMODAL_PROVIDER=openrouter
-MULTIMODAL_MODEL=qwen/qwen3.7-plus
-MULTIMODAL_BASE_URL=https://openrouter.ai/api/v1
-VISION_ENABLED=true
+```json
+{
+  "provider": "openrouter",
+  "model": "qwen/qwen3.7-plus",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "enabled": true
+}
 ```
 
-Without config, auto-discovers from opencode providers.
+API key is read automatically from opencode's auth storage — no secrets in config.
+Use `/ad-vision` command or env var `VISION_ENABLED=false` to disable.
 
 **Commands:**
 

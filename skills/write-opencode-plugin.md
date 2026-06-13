@@ -127,7 +127,8 @@ Publish a multi-plugin installer via npx from GitHub:
 
 - **Export must be named** (`export const X = async ...`), not default
 - **Local plugins auto-load** — no `opencode.json` entry needed
-- **Config via env vars** or `.opencode/.env` file, not plugin options
+- **Config via env vars** or a dedicated JSON config file (e.g. `.opencode/ad-vision.json`). Avoid `.env` for plugin settings — use a namespaced JSON config read via `Bun.file().json()`.
+- **API keys** are in `~/.local/share/opencode/auth.json` — read directly, never store in plugin configs
 - **Don't block at startup** — lazy-load providers, use `await` sparingly in init
 - **API keys** are in `~/.local/share/opencode/auth.json` (read directly for fast access)
 - **TypeScript** works but keep types minimal — runtime is Bun
