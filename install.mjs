@@ -41,12 +41,25 @@ function discoverPlugins() {
 
 // ── Install logic ─────────────────────────────────────────────────────
 
-function installPlugin(meta, targetPluginsDir) {
+function installPlugin(meta, targetPluginsDir, dataDir) {
   const dest = join(targetPluginsDir, `${meta.name}.ts`)
   const srcName = meta.files.includes("index.ts") ? "index.ts" : meta.files[0]
   mkdirSync(targetPluginsDir, { recursive: true })
   writeFileSync(dest, readFileSync(join(meta.dir, srcName), "utf8"))
   console.log(`  ✓ ${meta.name} → ${dest}`)
+
+  // Copy commands/ directory if present
+  const cmdSrc = join(meta.dir, "commands")
+  if (existsSync(cmdSrc) && statSync(cmdSrc).isDirectory()) {
+    const cmdDest = join(dataDir, "commands")
+    mkdirSync(cmdDest, { recursive: true })
+    for (const f of readdirSync(cmdSrc)) {
+      if (f.endsWith(".md")) {
+        writeFileSync(join(cmdDest, f), readFileSync(join(cmdSrc, f), "utf8"))
+        console.log(`  ✓ command ${f} → ${cmdDest}/${f}`)
+      }
+    }
+  }
 }
 
 function runInstall(dataDir, _configDir, label, pluginMap, requested) {
@@ -56,7 +69,7 @@ function runInstall(dataDir, _configDir, label, pluginMap, requested) {
   for (const name of requested) {
     const meta = pluginMap.get(name)
     if (!meta) { console.log(`  ✗ Unknown plugin: "${name}" — skipping`); continue }
-    installPlugin(meta, targetPluginsDir)
+    installPlugin(meta, targetPluginsDir, dataDir)
   }
   let pkg = existsSync(packageJson) ? JSON.parse(readFileSync(packageJson, "utf8")) : {}
   pkg.dependencies = pkg.dependencies || {}

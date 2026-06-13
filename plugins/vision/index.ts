@@ -349,20 +349,6 @@ export const VisionPlugin = async (ctx: any, options: any) => {
   })
 
   return {
-    command: {
-      vision_setup: {
-        template: "Guide the user through vision plugin setup. Read ~/.config/opencode/.env and .opencode/.env files. Tell them to set: MULTIMODAL_API_KEY, MULTIMODAL_MODEL, MULTIMODAL_BASE_URL in .opencode/.env or ~/.bashrc. Show current config if any.",
-        description: "Configure vision provider and model",
-      },
-      vision_status: {
-        template: "Show current vision plugin status using describe_image tool to check if it works. Read .opencode/.env and ~/.config/opencode/.env for MULTIMODAL_* variables.",
-        description: "Show vision plugin status and config",
-      },
-      vision_toggle: {
-        template: "Toggle vision plugin on/off. Read .opencode/.env, find VISION_ENABLED line. If false, change to true. If true or missing, set VISION_ENABLED=false. Use edit tool to modify .opencode/.env.",
-        description: "Enable or disable the vision plugin",
-      },
-    },
     tool: {
       describe_image: tool({
         description:

@@ -61,13 +61,12 @@ VISION_ENABLED=true
 
 Or use environment variables (same keys, overridden by `.env` file). Without config, the plugin auto-discovers a vision provider from opencode.
 
-**Slash commands (in TUI):**
+**Slash commands** are installed to `.opencode/commands/`:
 
 | Command | Description |
 |---|---|
-| `/vision_setup` | Interactive setup guide |
-| `/vision_status` | Show current config and status |
-| `/vision_toggle` | Enable/disable the plugin |
+| `/vision` | Show/setup vision config |
+| `/vision-toggle` | Enable/disable the plugin |
 
 ---
 
