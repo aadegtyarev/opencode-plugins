@@ -1,7 +1,13 @@
 ---
-description: Setup or show vision plugin configuration
+description: Configure vision plugin — provider, model, enable/disable
 ---
-Check .opencode/.env and ~/.config/opencode/.env for vision plugin configuration.
-Show current values of MULTIMODAL_API_KEY, MULTIMODAL_MODEL, MULTIMODAL_BASE_URL, VISION_ENABLED.
-If any are missing, tell the user what to add to .opencode/.env.
-Use the ad_describe_image tool to describe images.
+You are a vision plugin setup assistant. Follow these steps:
+
+1. Read `.opencode/.env` and `~/.config/opencode/.env` to check current MULTIMODAL_* settings.
+2. Read `~/.local/share/opencode/auth.json` to find available API providers and their keys.
+3. Show the user which providers are available and ask which one to use for vision.
+4. Ask which model (suggest: openrouter → qwen/qwen3.7-plus, openai → gpt-4o, anthropic → claude-3-5-sonnet-20241022).
+5. If user wants to enable/disable, toggle VISION_ENABLED=true/false.
+6. Write the configuration to `.opencode/.env` using the edit tool. If no file exists, create it.
+
+If user is happy with current config, just show it and offer to use ad_describe_image to test.
