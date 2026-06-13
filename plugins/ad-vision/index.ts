@@ -66,7 +66,7 @@ const MULTIMODAL_PATTERNS = [
   "gpt-4o", "gpt-4-turbo", "gpt-4-vision", "gpt-5",
   "claude-3", "claude-4",
   "gemini", "gemma",
-  "qwen-vl", "qwen2-vl", "qwen2.5-vl",
+  "qwen-vl", "qwen2-vl", "qwen2.5-vl", "qwen3-vl",
   "llava", "cogvlm", "fuyu", "pixtral",
   "vision", "vl-", "-vl",
 ]
