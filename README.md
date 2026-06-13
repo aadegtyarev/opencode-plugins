@@ -39,7 +39,7 @@ Multimodality for any text model via a separate vision model.
 
 **Zero-config:** auto-discovers a vision-capable provider. Toast on startup: `Vision: openrouter/... (v0.2.0)`.
 
-**Vision-priming:** on first image in session, injects a note telling the model it has vision capabilities.
+**Vision-priming:** on first image in session, injects a note telling the model it has vision capabilities. **Skips automatically** if the session model already supports vision natively (gpt-4o, claude-3+, gemini, qwen-vl, etc.).
 
 **Supported providers:** OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Together, Fireworks, xAI + any OpenAI-compatible API.
 

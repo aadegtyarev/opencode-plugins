@@ -130,12 +130,13 @@ Publish a multi-plugin installer via npx from GitHub:
 - **Config via env vars** or a dedicated JSON config file (e.g. `.opencode/ad-vision.json`). Avoid `.env` for plugin settings — use a namespaced JSON config read via `Bun.file().json()`.
 - **API keys** are in `~/.local/share/opencode/auth.json` — read directly, never store in plugin configs
 - **Don't block at startup** — lazy-load providers, use `await` sparingly in init
-- **API keys** are in `~/.local/share/opencode/auth.json` (read directly for fast access)
 - **TypeScript** works but keep types minimal — runtime is Bun
 - **`Bun.file()`** and `Bun.write()` for file I/O in plugins
 - **Tool names** must not collide with opencode builtins (e.g. `token_usage` is reserved)
 - **Hooks for all tools** (`tool.execute.after`, `tool.execute.before`) must early-return BEFORE async work — otherwise they break other plugins' tools
 - **Closure variables**: if a hook references a variable like `config`, declare/await it in that hook
+- **Session-native multimodal**: check `chat.message` input for the session model ID. If it already supports vision (gpt-4o, claude, gemini, qwen-vl, etc.), skip image interception — let the model handle it natively
+- **Config files**: read lazily on each use, not just at boot — so commands like `/ad-vision` can update config mid-session
 
 ## Naming convention
 
