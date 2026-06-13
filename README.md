@@ -52,7 +52,7 @@ Multimodality for any text model via a separate vision model.
 ```json
 {
   "provider": "openrouter",
-  "model": "qwen/qwen3.7-plus",
+  "model": "qwen/qwen3-vl-32b-instruct",
   "enabled": true
 }
 ```
