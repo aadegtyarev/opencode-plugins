@@ -391,12 +391,14 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
       // Inject prime only if not already done
       if (!primedSessions.has(_input.sessionID)) {
         primedSessions.add(_input.sessionID)
-        output.parts.push({
+        output.parts.unshift({
+          id: `${_input.id}_prime`,
+          sessionID: _input.sessionID,
+          messageID: _input.messageID,
           type: "text",
           text: VISION_PRIME,
         })
       }
-
       for (const part of imageParts) {
         try {
           const extracted = extractBase64FromDataUrl(part.url)
@@ -404,6 +406,9 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
           showToast(`Describing image...`, "info", 2000)
           const description = await describeBase64(extracted.base64, extracted.mime, config)
           output.parts.push({
+            id: `${part.id}_desc`,
+            sessionID: part.sessionID,
+            messageID: part.messageID,
             type: "text",
             text: `[Image${part.filename ? `: ${part.filename}` : ""}]\n\n${description}`,
           })
