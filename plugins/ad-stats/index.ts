@@ -36,12 +36,16 @@ function pct(part: number, total: number): string {
 export const AdStatsPlugin: Plugin = async () => {
   // Track last values per message — allows updating without double-counting
   const lastValues = new Map<string, { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number; cost: number }>()
+  let eventCount = 0
+  let msgCount = 0
   
   return {
     event: async ({ event }) => {
       try {
+        eventCount++
         if (event.type === "message.updated") {
         const msg = event.properties.info
+        msgCount++
         if (msg.role !== "assistant") return
 
         const key = `${msg.providerID}/${msg.modelID}`
@@ -88,7 +92,7 @@ export const AdStatsPlugin: Plugin = async () => {
           try {
             const session = storage.get(context.sessionID)
           if (!session || session.size === 0) {
-            return "No token usage data recorded for this session yet. Send a message and wait for a response to start collecting stats."
+            return `No token data yet. Events received: ${eventCount} total, ${msgCount} messages. Send a message and wait for a response.`
           }
 
           let totalInput = 0
