@@ -50,18 +50,15 @@ Multimodality for any text model via a separate vision model.
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Config (optional):** only needed if you install vision as an npm package:
+**Config:** the plugin auto-discovers a vision-capable provider from your opencode config. To use a specific model, set environment variables:
 
-```json
-{
-  "plugin": [
-    ["vision", {
-      "provider": "openrouter",
-      "model": "google/gemini-2.0-flash-exp:free"
-    }]
-  ]
-}
+```bash
+export MULTIMODAL_API_KEY=sk-...       # API key
+export MULTIMODAL_MODEL=gpt-4o         # model ID
+export MULTIMODAL_BASE_URL=https://...  # API base URL (optional, defaults to OpenAI)
 ```
+
+Or add a vision-capable provider (OpenRouter, OpenAI, etc.) to opencode — the plugin picks it up automatically.
 
 ---
 
