@@ -70,12 +70,30 @@ Or use environment variables (same keys, overridden by `.env` file). Without con
 
 ---
 
+### stats — token usage tracker
+
+Tracks token usage and costs per session, grouped by model.
+
+**Tool:** `token_usage` — shows a detailed breakdown: input/output/reasoning tokens, cache hits, costs per model.
+
+**Slash commands:**
+
+| Command | Description |
+|---|---|
+| `/tokens` | Show token usage stats for current session |
+
+---
+
 ## Repo structure
 
 ```
 plugins/
   vision/
     index.ts        ← plugin code
+    commands/       ← slash commands
+  stats/
+    index.ts        ← plugin code
+    commands/       ← slash commands
 install.mjs         ← universal installer
 package.json        ← npm package
 ```
