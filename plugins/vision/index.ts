@@ -59,6 +59,22 @@ function extractBase64FromDataUrl(url: string): { base64: string; mime: string }
 
 const IMAGE_MIME_PREFIXES = ["image/"]
 
+// Known multimodal models — plugin skips if session model already supports images natively
+const MULTIMODAL_PATTERNS = [
+  "gpt-4o", "gpt-4-turbo", "gpt-4-vision", "gpt-5",
+  "claude-3", "claude-4",
+  "gemini", "gemma",
+  "qwen-vl", "qwen2-vl", "qwen2.5-vl",
+  "llava", "cogvlm", "fuyu", "pixtral",
+  "vision", "vl-", "-vl",
+]
+
+function isSessionModelMultimodal(modelID?: string): boolean {
+  if (!modelID) return false
+  const lower = modelID.toLowerCase()
+  return MULTIMODAL_PATTERNS.some((p) => lower.includes(p))
+}
+
 function isImageMime(mime: string): boolean {
   return IMAGE_MIME_PREFIXES.some((p) => mime.startsWith(p))
 }
@@ -283,6 +299,8 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       }),
     },
     "chat.message": async (_input: any, output: any) => {
+      // Skip if the session model already supports images natively
+      if (isSessionModelMultimodal(_input.model?.modelID)) return
       const config = await getConfig()
       if (!config.apiKey) return
       const imageParts = output.parts.filter(
