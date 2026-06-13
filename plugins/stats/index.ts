@@ -1,5 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 
+const VERSION = "1.0.0"
+
 interface ModelStats {
   input: number
   output: number
@@ -23,7 +25,8 @@ function ensure(key: string, map: Map<string, ModelStats>): ModelStats {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString("en-US")
+  if (!isFinite(n)) return "0"
+  try { return n.toLocaleString("en-US") } catch { return String(n) }
 }
 
 function pct(part: number, total: number): string {
@@ -34,7 +37,8 @@ function pct(part: number, total: number): string {
 export const TokenStatsPlugin: Plugin = async () => {
   return {
     event: async ({ event }) => {
-      if (event.type === "message.updated") {
+      try {
+        if (event.type === "message.updated") {
         const msg = event.properties.info
         if (msg.role !== "assistant") return
 
@@ -64,11 +68,12 @@ export const TokenStatsPlugin: Plugin = async () => {
         s.messages++
       }
 
-      if (event.type === "session.deleted") {
-        const id = event.properties.info.id
-        storage.delete(id)
-        seen.delete(id)
-      }
+        if (event.type === "session.deleted") {
+          const id = event.properties.info.id
+          storage.delete(id)
+          seen.delete(id)
+        }
+      } catch { /* skip malformed events */ }
     },
 
     tool: {
@@ -77,7 +82,8 @@ export const TokenStatsPlugin: Plugin = async () => {
           "Show token usage statistics for the current OpenCode session, broken down by model (provider/model). Call this when the user asks about token consumption, costs, usage statistics, or how many tokens they have used.",
         args: {},
         async execute(_, context) {
-          const session = storage.get(context.sessionID)
+          try {
+            const session = storage.get(context.sessionID)
           if (!session || session.size === 0) {
             return "No token usage data recorded for this session yet. Send a message and wait for a response to start collecting stats."
           }
@@ -128,6 +134,9 @@ export const TokenStatsPlugin: Plugin = async () => {
           }
 
           return lines.join("\n")
+          } catch (err: any) {
+            return `Error: ${err?.message || err}`
+          }
         },
       }),
     },
