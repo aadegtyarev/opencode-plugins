@@ -58,6 +58,24 @@ return {
   "chat.message": async (input, output) => {
     // input.sessionID, input.model, input.agent
     // output.parts — modify/add parts here
+    // ⚠️ Parts pushed here are PERSISTED to the session and rendered in chat,
+    // and must pass the server schema (part.id must start with "prt", valid
+    // messageID). Use this only for content the user should actually see.
+  },
+
+  // Modify what's sent to the LLM WITHOUT persisting it to the chat
+  "experimental.chat.messages.transform": async (input, output) => {
+    // input is {} — no model/session. Read the model off the latest user
+    // message: output.messages[i].info.model.modelID
+    // output.messages is a fresh per-turn array (mutating it is safe) and is
+    // NOT saved. Replace/append parts to change only what the model receives.
+    // ⚠️ Fires on EVERY step of the agent loop — cache expensive work by part.id.
+  },
+
+  // Append to the system prompt WITHOUT persisting it
+  "experimental.chat.system.transform": async (input, output) => {
+    // input.model is a full Model — check input.model.capabilities.input.image
+    // output.system — push strings onto the system prompt
   },
 
   // Hook after a tool executes (e.g. read, bash)
@@ -135,7 +153,9 @@ Publish a multi-plugin installer via npx from GitHub:
 - **Tool names** must not collide with opencode builtins (e.g. `token_usage` is reserved)
 - **Hooks for all tools** (`tool.execute.after`, `tool.execute.before`) must early-return BEFORE async work — otherwise they break other plugins' tools
 - **Closure variables**: if a hook references a variable like `config`, declare/await it in that hook
-- **Session-native multimodal**: check `chat.message` input for the session model ID. If it already supports vision (gpt-4o, claude, gemini, qwen-vl, etc.), skip image interception — let the model handle it natively
+- **Persist vs transform**: `chat.message` output is SAVED and shown in chat (and validated — `part.id` must start with `prt`). To change what the model sees *without* polluting the chat or blocking the message from appearing, use `experimental.chat.messages.transform` (per-message parts) and `experimental.chat.system.transform` (system prompt). Doing async work in `chat.message` also delays the message rendering; doing it in the transform hook runs under the normal assistant spinner instead
+- **Transform hooks fire per loop step**: `experimental.chat.messages.transform` runs on every step of the agent loop (each tool turn), so cache expensive results (e.g. by `part.id`) — otherwise you redo the work every turn
+- **Session-native multimodal**: check `chat.message` input for the session model ID. If it already supports vision (gpt-4o, claude, gemini, qwen-vl, etc.), skip image interception — let the model handle it natively. In `messages.transform` there's no model in the input — read it from `output.messages[].info.model.modelID`
 - **Config files**: read lazily on each use, not just at boot — so commands like `/ad-vision` can update config mid-session
 
 ## Naming convention

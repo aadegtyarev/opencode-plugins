@@ -1,8 +1,34 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { FilePart } from "@opencode-ai/sdk"
 import { tool } from "@opencode-ai/plugin"
+import { appendFile } from "node:fs/promises"
 
-const VERSION = "0.2.0"
+const VERSION = "0.3.0"
+
+// Shared token-usage ledger. The vision model is called over raw HTTP, so its
+// usage never reaches opencode's message events — the ad-stats plugin reads this
+// file to fold those tokens into the per-model breakdown. Keep the path in sync
+// with ad-stats/index.ts.
+const USAGE_LEDGER = `${process.env.HOME}/.local/share/opencode/ad-vision-usage.jsonl`
+
+interface Usage { input: number; output: number }
+interface DescribeResult { text: string; usage: Usage }
+
+async function recordUsage(sessionID: string, config: ResolvedConfig, usage: Usage): Promise<void> {
+  if (!sessionID || (!usage.input && !usage.output)) return
+  try {
+    const line = JSON.stringify({
+      sessionID,
+      providerID: config.providerId,
+      model: config.model,
+      input: usage.input,
+      output: usage.output,
+    }) + "\n"
+    await appendFile(USAGE_LEDGER, line)
+  } catch (err) {
+    console.error("[ad-vision] failed to record usage:", err)
+  }
+}
 
 interface PluginOptions {
   provider?: string
@@ -191,7 +217,7 @@ async function resolveConfig(options: PluginOptions, client: any, envFile: Recor
   return { providerId: "openai", model, apiKey, baseUrl, isAnthropic: false }
 }
 
-async function callAnthropicApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<string> {
+async function callAnthropicApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<DescribeResult> {
   let base = config.baseUrl || ""
   if (!base.startsWith("http")) {
     console.error(`[vision] Invalid baseUrl: "${base}", falling back to Anthropic`)
@@ -221,10 +247,13 @@ async function callAnthropicApi(base64: string, mediaType: string, config: Resol
   if (data.error) throw new Error(`${config.providerId} API error: ${data.error.message}`)
   const text = data?.content?.[0]?.text
   if (!text) throw new Error(`${config.providerId} returned no content: ${JSON.stringify(data).slice(0, 300)}`)
-  return text
+  return {
+    text,
+    usage: { input: data?.usage?.input_tokens || 0, output: data?.usage?.output_tokens || 0 },
+  }
 }
 
-async function callOpenAICompatibleApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<string> {
+async function callOpenAICompatibleApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<DescribeResult> {
   let base = config.baseUrl || ""
   if (!base.startsWith("http")) {
     console.error(`[vision] Invalid baseUrl: "${base}", falling back to OpenAI`)
@@ -258,20 +287,43 @@ async function callOpenAICompatibleApi(base64: string, mediaType: string, config
   if (data.error) throw new Error(`${config.providerId} API error: ${data.error.message}`)
   const text = data?.choices?.[0]?.message?.content
   if (!text) throw new Error(`${config.providerId} returned no content: ${JSON.stringify(data).slice(0, 300)}`)
-  return text
+  return {
+    text,
+    usage: { input: data?.usage?.prompt_tokens || 0, output: data?.usage?.completion_tokens || 0 },
+  }
 }
 
-async function describeBase64(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<string> {
+async function describeBase64(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<DescribeResult> {
   if (config.isAnthropic) return callAnthropicApi(base64, mediaType, config, prompt)
   return callOpenAICompatibleApi(base64, mediaType, config, prompt)
 }
 
-async function describeFile(filePath: string, config: ResolvedConfig, prompt?: string): Promise<string> {
+async function describeFile(filePath: string, config: ResolvedConfig, prompt?: string): Promise<DescribeResult> {
   const file = Bun.file(filePath)
   if (!(await file.exists())) throw new Error(`File not found: ${filePath}`)
   const arrayBuffer = await file.arrayBuffer()
   const base64 = Buffer.from(arrayBuffer).toString("base64")
   return describeBase64(base64, getMediaType(filePath), config, prompt)
+}
+
+// A persisted FilePart.url may be a data: URL, a file:// URL, or a plain path.
+async function filePartToBase64(part: FilePart): Promise<{ base64: string; mime: string } | null> {
+  const url = part.url || ""
+  if (url.startsWith("data:")) {
+    const ex = extractBase64FromDataUrl(url)
+    if (ex) return ex
+  }
+  let path: string | null = null
+  if (url.startsWith("file://")) path = decodeURIComponent(url.slice("file://".length))
+  else if (url.startsWith("/")) path = url
+  if (path) {
+    const file = Bun.file(path)
+    if (await file.exists()) {
+      const arrayBuffer = await file.arrayBuffer()
+      return { base64: Buffer.from(arrayBuffer).toString("base64"), mime: part.mime || getMediaType(path) }
+    }
+  }
+  return null
 }
 
 async function loadPluginConfig(dir: string): Promise<Record<string, string> | null> {
@@ -285,7 +337,9 @@ async function loadPluginConfig(dir: string): Promise<Record<string, string> | n
 export const AdVisionPlugin = async (ctx: any, options: any) => {
   const opts = (options || {}) as PluginOptions
   const describedFiles = new Set<string>()
-  const primedSessions = new Set<string>()
+  // Cache descriptions by FilePart.id — the messages.transform hook fires on
+  // every step of the agent loop, so without this every tool turn re-describes.
+  const descCache = new Map<string, string>()
 
   // Read config lazily — picks up changes from /ad-vision command
   const readCfg = async (): Promise<Record<string, string>> => {
@@ -341,15 +395,10 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
     return cachedConfig
   }
 
-  const showToast = async (msg: string, variant: string, duration: number) => {
-    try { await ctx.client.tui.showToast({ body: { message: msg, variant, duration } }) } catch { }
-  }
-
-  // Toast on startup only if config already exists
-  if (bootCfg.model) {
-    getConfig().then((config) => {
-      showToast(`Vision: ${config.providerId}/${config.model} (v${VERSION})`, "info", 4000)
-    })
+  // Only surfaced for failures — success/progress is shown by the normal
+  // assistant spinner while the transform hook blocks on the describe call.
+  const showError = async (msg: string) => {
+    try { await ctx.client.tui.showToast({ body: { message: msg, variant: "error", duration: 5000 } }) } catch { }
   }
 
   return {
@@ -370,56 +419,76 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
           const absolutePath = path.startsWith("/") ? path : `${context.directory}/${path}`
           if (!isImagePath(absolutePath)) return `Error: "${path}" is not a supported image format. Supported: ${[...IMAGE_EXTENSIONS].join(", ")}.`
           try {
-            return await describeFile(absolutePath, config, prompt)
+            const result = await describeFile(absolutePath, config, prompt)
+            await recordUsage(context.sessionID, config, result.usage)
+            return result.text
           } catch (err) {
             return `Error: ${err instanceof Error ? err.message : String(err)}`
           }
         },
       }),
     },
-    "chat.message": async (_input: any, output: any) => {
+    // Inject the priming note into the system prompt — invisible to the chat.
+    "experimental.chat.system.transform": async (input: any, output: any) => {
       try {
-      if (isSessionModelMultimodal(_input.model?.modelID)) return
-      const config = await getConfig()
-      if (!config.apiKey) return
-      const imageParts = output.parts.filter(
-        (p: any) => p.type === "file" && isImageMime((p as FilePart).mime),
-      ) as FilePart[]
-      if (imageParts.length === 0) return
-      showToast(`Vision: ${imageParts.length} image(s) detected`, "info", 1500)
-
-      // Inject prime only if not already done
-      if (!primedSessions.has(_input.sessionID)) {
-        primedSessions.add(_input.sessionID)
-        output.parts.unshift({
-          id: `${_input.id}_prime`,
-          sessionID: _input.sessionID,
-          messageID: _input.messageID,
-          type: "text",
-          text: VISION_PRIME,
-        })
-      }
-      for (const part of imageParts) {
-        try {
-          const extracted = extractBase64FromDataUrl(part.url)
-          if (!extracted) continue
-          showToast(`Describing image...`, "info", 2000)
-          const description = await describeBase64(extracted.base64, extracted.mime, config)
-          output.parts.push({
-            id: `${part.id}_desc`,
-            sessionID: part.sessionID,
-            messageID: part.messageID,
-            type: "text",
-            text: `[Image${part.filename ? `: ${part.filename}` : ""}]\n\n${description}`,
-          })
-          showToast(`Image described via ${config.providerId}/${config.model}`, "info", 2000)
-        } catch (err) {
-          console.error(`[ad-vision] Failed to describe pasted image:`, err)
-          showToast(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`, "error", 5000)
-        }
-      }
+        if (input.model?.capabilities?.input?.image) return
+        if (isSessionModelMultimodal(input.model?.id)) return
+        const config = await getConfig()
+        if (!config.apiKey) return
+        if (!output.system.includes(VISION_PRIME)) output.system.push(VISION_PRIME)
       } catch (err) {
-        console.error("[ad-vision] chat.message hook error:", err)
+        console.error("[ad-vision] system.transform hook error:", err)
+      }
+    },
+
+    // Replace image file parts with text descriptions in the messages sent to
+    // the model. These transformed messages are NOT persisted, so the chat keeps
+    // showing the image as a file plaza while the model receives text only.
+    "experimental.chat.messages.transform": async (_input: any, output: any) => {
+      try {
+        const messages = output.messages || []
+        // Hook input carries no model — read it off the latest user message.
+        let modelID = ""
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const info = messages[i]?.info
+          if (info?.role === "user" && info?.model?.modelID) { modelID = info.model.modelID; break }
+        }
+        if (isSessionModelMultimodal(modelID)) return
+        const config = await getConfig()
+        if (!config.apiKey) return
+
+        for (const msg of messages) {
+          if (msg?.info?.role !== "user" || !Array.isArray(msg.parts)) continue
+          for (let i = 0; i < msg.parts.length; i++) {
+            const part = msg.parts[i]
+            if (part?.type !== "file" || !isImageMime(part.mime)) continue
+            let description = descCache.get(part.id)
+            if (!description) {
+              const data = await filePartToBase64(part as FilePart)
+              if (!data) continue
+              try {
+                const result = await describeBase64(data.base64, data.mime, config)
+                description = result.text
+                descCache.set(part.id, description)
+                await recordUsage(msg.info.sessionID, config, result.usage)
+              } catch (err) {
+                console.error(`[ad-vision] Failed to describe image:`, err)
+                showError(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`)
+                continue
+              }
+            }
+            msg.parts[i] = {
+              id: part.id,
+              sessionID: part.sessionID,
+              messageID: part.messageID,
+              type: "text",
+              text: `[Image${part.filename ? `: ${part.filename}` : ""}]\n\n${description}`,
+              synthetic: true,
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[ad-vision] messages.transform hook error:", err)
       }
     },
     "tool.execute.after": async (input: any, output: any) => {
@@ -432,13 +501,12 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
       if (!config.apiKey) return
       describedFiles.add(filePath)
       try {
-        showToast(`Describing ${filePath.split("/").pop()}...`, "info", 2000)
-        const description = await describeFile(filePath, config)
-        output.output = `[Image described by vision plugin]\n\n${description}`
-        showToast(`Image described via ${config.providerId}/${config.model}`, "info", 2000)
+        const result = await describeFile(filePath, config)
+        await recordUsage(input.sessionID, config, result.usage)
+        output.output = `[Image described by vision plugin]\n\n${result.text}`
       } catch (err) {
         console.error(`[ad-vision] Failed to auto-describe ${filePath}:`, err)
-        showToast(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`, "error", 5000)
+        showError(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`)
       }
     },
   }

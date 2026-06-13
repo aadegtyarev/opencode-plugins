@@ -1,6 +1,11 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 
-const VERSION = "1.0.0"
+const VERSION = "1.1.0"
+
+// Token-usage ledger written by the ad-vision plugin. The vision model is called
+// over raw HTTP, so its usage never reaches opencode's message events — we read
+// this file to fold those tokens in. Keep the path in sync with ad-vision/index.ts.
+const USAGE_LEDGER = `${process.env.HOME}/.local/share/opencode/ad-vision-usage.jsonl`
 
 interface ModelStats {
   input: number
@@ -13,6 +18,28 @@ interface ModelStats {
 }
 
 const storage = new Map<string, Map<string, ModelStats>>()
+
+// Read the vision ledger and aggregate per model key for one session.
+async function readVisionUsage(sessionID: string): Promise<Map<string, ModelStats>> {
+  const out = new Map<string, ModelStats>()
+  try {
+    const file = Bun.file(USAGE_LEDGER)
+    if (!(await file.exists())) return out
+    const text = await file.text()
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue
+      let r: any
+      try { r = JSON.parse(line) } catch { continue }
+      if (r.sessionID !== sessionID) continue
+      const key = `${r.providerID}/${r.model}`
+      const s = ensure(key, out)
+      s.input += r.input || 0
+      s.output += r.output || 0
+      s.messages++
+    }
+  } catch { /* ignore unreadable ledger */ }
+  return out
+}
 
 function ensure(key: string, map: Map<string, ModelStats>): ModelStats {
   let s = map.get(key)
@@ -81,6 +108,19 @@ export const AdStatsPlugin: Plugin = async () => {
         if (event.type === "session.deleted") {
           const id = event.properties.info.id
           storage.delete(id)
+          // Drop this session's rows from the vision ledger so it doesn't grow forever.
+          try {
+            const file = Bun.file(USAGE_LEDGER)
+            if (await file.exists()) {
+              const kept = (await file.text())
+                .split("\n")
+                .filter((line) => {
+                  if (!line.trim()) return false
+                  try { return JSON.parse(line).sessionID !== id } catch { return false }
+                })
+              await Bun.write(USAGE_LEDGER, kept.length ? kept.join("\n") + "\n" : "")
+            }
+          } catch { /* ignore */ }
         }
       } catch { /* skip malformed events */ }
     },
@@ -92,8 +132,21 @@ export const AdStatsPlugin: Plugin = async () => {
         args: {},
         async execute(_, context) {
           try {
-            const session = storage.get(context.sessionID)
-          if (!session || session.size === 0) {
+            // Merge the main-model stats (from message events) with vision-model
+            // usage (from the ledger) into one per-model view.
+            const session = new Map<string, ModelStats>()
+            for (const [key, s] of storage.get(context.sessionID) || []) {
+              session.set(key, { ...s })
+            }
+            for (const [key, v] of await readVisionUsage(context.sessionID)) {
+              const s = ensure(key, session)
+              s.input += v.input
+              s.output += v.output
+              s.reasoning += v.reasoning
+              s.cost += v.cost
+              s.messages += v.messages
+            }
+          if (session.size === 0) {
             return `No token data yet. Events: ${eventCount} total (${[...receivedTypes].join(", ") || "none"}), ${msgCount} messages.`
           }
 

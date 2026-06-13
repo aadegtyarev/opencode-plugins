@@ -35,15 +35,19 @@ Plugins placed in `.opencode/plugins/` are auto-loaded — no config changes nee
 
 Multimodality for any text model via a separate vision model.
 
-**How it works:** intercepts images, sends them to a vision model, injects text description into context. Primary model "sees" images without native vision support.
+**How it works:** when a message reaches the model, each image is sent to a vision model and replaced by its text description in what the model receives — invisibly. The image stays in the chat as a normal file attachment, and the work runs under the usual assistant spinner. The primary model "sees" images without native vision support.
 
-**Zero-config:** auto-discovers a vision-capable provider. Toast on startup: `Vision: openrouter/... (v0.2.0)`.
+**Why transform hooks:** the description is injected via `experimental.chat.messages.transform` (per-message) and the vision-priming note via `experimental.chat.system.transform`. These modify only what's sent to the model and are **not persisted to the chat** — so the image isn't buried under a wall of injected text, and the message isn't blocked from rendering while the vision model works. Descriptions are cached per image so the second model is called once, not on every tool turn.
 
-**Vision-priming:** on first image in session, injects a note telling the model it has vision capabilities. **Skips automatically** if the session model already supports vision natively (gpt-4o, claude-3+, gemini, qwen-vl, etc.).
+**Zero-config:** auto-discovers a vision-capable provider.
+
+**Vision-priming:** injects a system-prompt note telling the model it has vision capabilities. **Skips automatically** if the session model already supports vision natively (gpt-4o, claude-3+, gemini, qwen-vl, etc.).
+
+**Token accounting:** vision-model calls go over raw HTTP and bypass opencode's usage events, so the plugin logs their token usage to a shared ledger (`~/.local/share/opencode/ad-vision-usage.jsonl`) that **ad-stats** reads — both models then show up in `/ad-tokens`.
 
 **Supported providers:** OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Together, Fireworks, xAI + any OpenAI-compatible API.
 
-**Hooks:** `chat.message` (pasted images), `tool.execute.after` on `read` (file reads), `ad_describe_image` tool (explicit).
+**Hooks:** `experimental.chat.messages.transform` (images → descriptions), `experimental.chat.system.transform` (priming), `tool.execute.after` on `read` (file reads), `ad_describe_image` tool (explicit).
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
@@ -76,6 +80,8 @@ Tracks token usage and costs per session, grouped by model.
 **Tool:** `ad_token_stats` — input/output/reasoning tokens, cache hits, costs per model.
 
 **Command:** `/ad-tokens` — show stats for current session.
+
+**Vision model included:** folds in the **ad-vision** vision-model usage from the shared ledger (`~/.local/share/opencode/ad-vision-usage.jsonl`), so a session running a text model + a vision model shows both. Ledger rows are dropped when a session is deleted.
 
 ---
 
