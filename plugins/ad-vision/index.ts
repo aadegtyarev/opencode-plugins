@@ -395,7 +395,6 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
           messageID: _input.messageID,
           type: "text",
           text: VISION_PRIME,
-          synthetic: true,
         })
       }
       for (const part of imageParts) {
@@ -410,7 +409,6 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
             messageID: part.messageID,
             type: "text",
             text: `[Image${part.filename ? `: ${part.filename}` : ""}]\n\n${description}`,
-            synthetic: true,
           })
           showToast(`Image described via ${config.providerId}/${config.model}`, "info", 2000)
         } catch (err) {
