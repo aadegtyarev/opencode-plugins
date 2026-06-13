@@ -34,7 +34,7 @@ function pct(part: number, total: number): string {
   return ((part / total) * 100).toFixed(1) + "%"
 }
 
-export const TokenStatsPlugin: Plugin = async () => {
+export const AdStatsPlugin: Plugin = async () => {
   return {
     event: async ({ event }) => {
       try {
@@ -77,7 +77,7 @@ export const TokenStatsPlugin: Plugin = async () => {
     },
 
     tool: {
-      token_stats: tool({
+      ad_token_stats: tool({
         description:
           "Show token usage statistics for the current OpenCode session, broken down by model (provider/model). Call this when the user asks about token consumption, costs, usage statistics, or how many tokens they have used.",
         args: {},

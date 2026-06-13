@@ -293,7 +293,7 @@ async function describeFile(filePath: string, config: ResolvedConfig, prompt?: s
   return describeBase64(base64, getMediaType(filePath), config, prompt)
 }
 
-export const VisionPlugin = async (ctx: any, options: any) => {
+export const AdVisionPlugin = async (ctx: any, options: any) => {
   const opts = (options || {}) as PluginOptions
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
@@ -350,7 +350,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
 
   return {
     tool: {
-      describe_image: tool({
+      ad_describe_image: tool({
         description:
           "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model. " +
           "Use this tool whenever you encounter an image file and need to understand its contents. " +

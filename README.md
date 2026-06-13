@@ -2,20 +2,22 @@
 
 A collection of plugins for [OpenCode](https://github.com/anomalyco/opencode). Install all at once or pick what you need.
 
+All plugins use `ad-` prefix to avoid conflicts.
+
 ## Install
 
 ```bash
-npx github:aadegtyarev/opencode-plugins              # interactive: pick target + plugins
-npx github:aadegtyarev/opencode-plugins vision       # non-interactive: specific plugins
-npx github:aadegtyarev/opencode-plugins vision foo   # multiple
+npx github:aadegtyarev/opencode-plugins                 # interactive: pick target + plugins
+npx github:aadegtyarev/opencode-plugins ad-vision       # only vision
+npx github:aadegtyarev/opencode-plugins ad-vision ad-stats  # multiple
 ```
 
 Flags:
 
 ```bash
-npx github:aadegtyarev/opencode-plugins --local      # force project install (.opencode/)
-npx github:aadegtyarev/opencode-plugins --global     # force global install (~/.config/opencode/)
-npx github:aadegtyarev/opencode-plugins --help       # show help
+--local   Install into project .opencode/
+--global  Install into ~/.config/opencode/
+--help    Show help
 ```
 
 The installer:
@@ -23,34 +25,29 @@ The installer:
 - Adds `@opencode-ai/plugin` to `package.json` and runs `npm install`
 - Detects a local project by the presence of `.opencode/` or `opencode.json`
 
-**Plugins placed in `.opencode/plugins/` are auto-loaded by OpenCode — no config changes needed.**
+Plugins placed in `.opencode/plugins/` are auto-loaded — no config changes needed.
 
 ---
 
 ## Plugins
 
-### vision — multimodal-bridge
+### ad-vision — multimodal-bridge
 
 Multimodality for any text model via a separate vision model.
 
-**How it works:** the plugin intercepts images, sends them to a vision model, and injects the text description into the context. Your primary model "sees" images even without native vision support.
+**How it works:** intercepts images, sends them to a vision model, injects text description into context. Primary model "sees" images without native vision support.
 
-**Zero-config:** auto-discovers a vision-capable provider from your opencode config. Shows a toast on startup: `Vision: openrouter/google/gemini-2.0-flash-exp:free`.
+**Zero-config:** auto-discovers a vision-capable provider. Toast on startup: `Vision: openrouter/... (v0.2.0)`.
 
-**Vision-priming:** on the first image in a session, injects a note telling the text model it has vision capabilities and to trust the provided descriptions. Models like DeepSeek stop refusing and start using the image descriptions.
+**Vision-priming:** on first image in session, injects a note telling the model it has vision capabilities.
 
 **Supported providers:** OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Together, Fireworks, xAI + any OpenAI-compatible API.
 
-**Three interception hooks:**
-| Hook | When |
-|---|---|
-| `chat.message` | Image pasted/dropped in chat |
-| `tool.execute.after` on `read` | Agent reads an image file |
-| `describe_image` tool | Explicit call |
+**Hooks:** `chat.message` (pasted images), `tool.execute.after` on `read` (file reads), `ad_describe_image` tool (explicit).
 
 **Formats:** PNG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF, AVIF.
 
-**Config:** create `.opencode/.env` (local) or `~/.config/opencode/.env` (global):
+**Config:** `.opencode/.env` or `~/.config/opencode/.env`:
 
 ```env
 MULTIMODAL_API_KEY=sk-or-v1-...
@@ -59,28 +56,24 @@ MULTIMODAL_BASE_URL=https://openrouter.ai/api/v1
 VISION_ENABLED=true
 ```
 
-Or use environment variables (same keys, overridden by `.env` file). Without config, the plugin auto-discovers a vision provider from opencode.
+Without config, auto-discovers from opencode providers.
 
-**Slash commands** are installed to `.opencode/commands/`:
+**Commands:**
 
 | Command | Description |
 |---|---|
-| `/vision` | Show/setup vision config |
-| `/vision-toggle` | Enable/disable the plugin |
+| `/ad-vision` | Show/setup vision config |
+| `/ad-vision-toggle` | Enable/disable |
 
 ---
 
-### stats — token usage tracker
+### ad-stats — token usage tracker
 
 Tracks token usage and costs per session, grouped by model.
 
-**Tool:** `token_usage` — shows a detailed breakdown: input/output/reasoning tokens, cache hits, costs per model.
+**Tool:** `ad_token_stats` — input/output/reasoning tokens, cache hits, costs per model.
 
-**Slash commands:**
-
-| Command | Description |
-|---|---|
-| `/tokens` | Show token usage stats for current session |
+**Command:** `/ad-tokens` — show stats for current session.
 
 ---
 
@@ -88,14 +81,15 @@ Tracks token usage and costs per session, grouped by model.
 
 ```
 plugins/
-  vision/
+  ad-vision/
     index.ts        ← plugin code
     commands/       ← slash commands
-  stats/
+  ad-stats/
     index.ts        ← plugin code
     commands/       ← slash commands
 install.mjs         ← universal installer
-package.json        ← npm package
+package.json
+skills/             ← agent skills
 ```
 
-Each plugin is a folder under `plugins/`. The folder name is the plugin file name. To add a new plugin, create `plugins/<name>/index.ts` — the installer picks it up automatically.
+To add a new plugin, create `plugins/ad-<name>/index.ts` — the installer picks it up automatically.

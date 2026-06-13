@@ -132,6 +132,21 @@ Publish a multi-plugin installer via npx from GitHub:
 - **API keys** are in `~/.local/share/opencode/auth.json` (read directly for fast access)
 - **TypeScript** works but keep types minimal — runtime is Bun
 - **`Bun.file()`** and `Bun.write()` for file I/O in plugins
-- **Tool names** must not collide with opencode builtins (e.g. `token_usage` is reserved, use `token_stats`)
-- **Hooks that fire for all tools** (`tool.execute.after`, `tool.execute.before`) must early-return for irrelevant tools BEFORE doing any async work — otherwise they break other plugins' tools
-- **Closure variables** in hooks: if a hook references a variable like `config`, make sure it's declared/awaited in that hook, not assumed from outer scope
+- **Tool names** must not collide with opencode builtins (e.g. `token_usage` is reserved)
+- **Hooks for all tools** (`tool.execute.after`, `tool.execute.before`) must early-return BEFORE async work — otherwise they break other plugins' tools
+- **Closure variables**: if a hook references a variable like `config`, declare/await it in that hook
+
+## Naming convention
+
+Use `ad-` prefix for all plugin artifacts to avoid conflicts:
+
+| What | Pattern | Example |
+|---|---|---|
+| Plugin dir | `plugins/ad-<name>/` | `plugins/ad-vision/` |
+| Plugin file | `ad-<name>.ts` | `ad-vision.ts` |
+| Export name | `Ad<Name>Plugin` | `AdVisionPlugin` |
+| Tool IDs | `ad_<name>` | `ad_describe_image` |
+| Commands | `/ad-<name>` | `/ad-vision`, `/ad-vision-toggle` |
+| Command files | `ad-<name>.md` | `ad-vision.md` |
+
+One style: hyphens for user-facing names (files, folders, commands), underscores for code identifiers (tool IDs).
