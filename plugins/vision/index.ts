@@ -173,7 +173,12 @@ async function resolveConfig(options: PluginOptions, client: any): Promise<Resol
 }
 
 async function callAnthropicApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<string> {
-  const url = config.baseUrl.replace(/\/+$/, "") + "/messages"
+  let base = config.baseUrl || ""
+  if (!base.startsWith("http")) {
+    console.error(`[vision] Invalid baseUrl: "${base}", falling back to Anthropic`)
+    base = "https://api.anthropic.com/v1"
+  }
+  const url = base.replace(/\/+$/, "") + "/messages"
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -201,7 +206,12 @@ async function callAnthropicApi(base64: string, mediaType: string, config: Resol
 }
 
 async function callOpenAICompatibleApi(base64: string, mediaType: string, config: ResolvedConfig, prompt?: string): Promise<string> {
-  const url = config.baseUrl.replace(/\/+$/, "") + "/chat/completions"
+  let base = config.baseUrl || ""
+  if (!base.startsWith("http")) {
+    console.error(`[vision] Invalid baseUrl: "${base}", falling back to OpenAI`)
+    base = "https://api.openai.com/v1"
+  }
+  const url = base.replace(/\/+$/, "") + "/chat/completions"
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${config.apiKey}`,
