@@ -77,7 +77,7 @@ export const TokenStatsPlugin: Plugin = async () => {
     },
 
     tool: {
-      token_usage: tool({
+      token_stats: tool({
         description:
           "Show token usage statistics for the current OpenCode session, broken down by model (provider/model). Call this when the user asks about token consumption, costs, usage statistics, or how many tokens they have used.",
         args: {},
