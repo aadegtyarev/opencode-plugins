@@ -412,12 +412,13 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       }
     },
     "tool.execute.after": async (input: any, output: any) => {
-      if (!config.apiKey) return
       if (input.tool !== "read") return
       const args = input.args as Record<string, any> | undefined
       const filePath = args?.filePath
       if (!filePath || typeof filePath !== "string" || !isImagePath(filePath)) return
       if (describedFiles.has(filePath)) return
+      const config = await getConfig()
+      if (!config.apiKey) return
       describedFiles.add(filePath)
       try {
         const description = await describeFile(filePath, config)
