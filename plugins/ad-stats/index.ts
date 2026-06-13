@@ -114,25 +114,16 @@ export const AdStatsPlugin: Plugin = async () => {
           const lines: string[] = []
           const totalTokens = totalInput + totalOutput + totalReasoning
 
-          lines.push(`## Token Usage`)
-          lines.push(
-            `**Session:** \`${context.sessionID.slice(0, 8)}...\`  |  **Messages:** ${totalMsgs}  |  **Tokens:** ${fmt(totalTokens)}  |  **Cache:** r${fmt(totalCacheRead)} / w${fmt(totalCacheWrite)}  |  **Cost:** $${totalCost.toFixed(4)}`,
-          )
-          lines.push("")
+          lines.push(`Token Usage — Session ${context.sessionID.slice(0, 8)}...`)
+          lines.push(`Messages: ${totalMsgs}  Tokens: ${fmt(totalTokens)}  Cache: ${fmt(totalCacheRead)}r / ${fmt(totalCacheWrite)}w  Cost: $${totalCost.toFixed(4)}`)
+          lines.push("─".repeat(60))
 
           for (const [model, s] of modelEntries) {
             const modelTokens = s.input + s.output + s.reasoning
-            lines.push(`### ${model}`)
-            lines.push(`| Metric | Value |`)
-            lines.push(`|--------|-------|`)
-            lines.push(`| Messages | ${s.messages} |`)
-            lines.push(`| Input tokens | ${fmt(s.input)} |`)
-            lines.push(`| Output tokens | ${fmt(s.output)} |`)
-            lines.push(`| Reasoning tokens | ${fmt(s.reasoning)} |`)
-            lines.push(`| Cache read | ${fmt(s.cacheRead)} (${pct(s.cacheRead, s.input)}) |`)
-            lines.push(`| Cache write | ${fmt(s.cacheWrite)} (${pct(s.cacheWrite, s.input)}) |`)
-            lines.push(`| **Subtotal** | **${fmt(modelTokens)} tokens** |`)
-            lines.push(`| **Cost** | **$${s.cost.toFixed(4)}** |`)
+            lines.push(`${model}`)
+            lines.push(`  Input:     ${String(fmt(s.input)).padStart(10)}  Output:   ${String(fmt(s.output)).padStart(10)}  Reasoning: ${String(fmt(s.reasoning)).padStart(8)}`)
+            lines.push(`  Cache:     ${String(fmt(s.cacheRead) + "r").padStart(10)}  Cache w:  ${String(fmt(s.cacheWrite) + "w").padStart(10)}  Messages:  ${String(s.messages).padStart(6)}`)
+            lines.push(`  Subtotal:  ${String(fmt(modelTokens)).padStart(10)} tokens  Cost:     $${s.cost.toFixed(4)}`)
             lines.push("")
           }
 
