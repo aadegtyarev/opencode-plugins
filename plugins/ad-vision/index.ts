@@ -315,13 +315,41 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
   // Lazy config — resolves on first use, prevents blocking at startup
   let configPromise: Promise<ResolvedConfig> | null = null
   const getConfig = () => {
-    if (envFromFile.MULTIMODAL_API_KEY && envFromFile.MULTIMODAL_MODEL) {
+    if (envFromFile.MULTIMODAL_MODEL) {
       const pid = envFromFile.MULTIMODAL_PROVIDER || "openai"
       const builtin = BUILTIN_PROVIDERS[pid]
+      // Read API key from auth.json (opencode stores keys there)
+      let apiKey = envFromFile.MULTIMODAL_API_KEY || ""
+      if (!apiKey) {
+        try {
+          const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
+          // Synchronous-ish: we're in a lazy getter, can use await
+        } catch { }
+        // Use async key resolution in background
+        configPromise = (async () => {
+          let key = ""
+          try {
+            const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
+            if (await authFile.exists()) {
+              const auth = await authFile.json()
+              key = auth[pid]?.key || ""
+            }
+          } catch { }
+          if (!key) key = process.env.MULTIMODAL_API_KEY || ""
+          return {
+            providerId: pid,
+            model: envFromFile.MULTIMODAL_MODEL,
+            apiKey: key,
+            baseUrl: envFromFile.MULTIMODAL_BASE_URL || builtin?.api || "https://api.openai.com/v1",
+            isAnthropic: builtin?.isAnthropic || false,
+          }
+        })()
+        return configPromise
+      }
       return Promise.resolve({
         providerId: pid,
         model: envFromFile.MULTIMODAL_MODEL,
-        apiKey: envFromFile.MULTIMODAL_API_KEY,
+        apiKey,
         baseUrl: envFromFile.MULTIMODAL_BASE_URL || builtin?.api || "https://api.openai.com/v1",
         isAnthropic: builtin?.isAnthropic || false,
       })

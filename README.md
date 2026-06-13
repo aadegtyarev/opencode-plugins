@@ -50,8 +50,8 @@ Multimodality for any text model via a separate vision model.
 **Config:** `.opencode/.env` or `~/.config/opencode/.env`:
 
 ```env
-# ad-vision plugin config
-MULTIMODAL_API_KEY=sk-or-v1-...
+# ad-vision plugin config (API key auto-read from opencode auth)
+MULTIMODAL_PROVIDER=openrouter
 MULTIMODAL_MODEL=qwen/qwen3.7-plus
 MULTIMODAL_BASE_URL=https://openrouter.ai/api/v1
 VISION_ENABLED=true
