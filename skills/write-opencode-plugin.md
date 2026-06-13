@@ -132,3 +132,6 @@ Publish a multi-plugin installer via npx from GitHub:
 - **API keys** are in `~/.local/share/opencode/auth.json` (read directly for fast access)
 - **TypeScript** works but keep types minimal — runtime is Bun
 - **`Bun.file()`** and `Bun.write()` for file I/O in plugins
+- **Tool names** must not collide with opencode builtins (e.g. `token_usage` is reserved, use `token_stats`)
+- **Hooks that fire for all tools** (`tool.execute.after`, `tool.execute.before`) must early-return for irrelevant tools BEFORE doing any async work — otherwise they break other plugins' tools
+- **Closure variables** in hooks: if a hook references a variable like `config`, make sure it's declared/awaited in that hook, not assumed from outer scope
