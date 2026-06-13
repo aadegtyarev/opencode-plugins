@@ -165,6 +165,82 @@ async function promptConfirm(question) {
   })
 }
 
+// ── Vision provider setup ─────────────────────────────────────────────
+
+const DEFAULT_VISION_MODELS = {
+  openai: ["gpt-4o", "gpt-4o-mini"],
+  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
+  openrouter: ["google/gemini-2.0-flash-exp:free", "qwen/qwen-vl-max", "openai/gpt-4o"],
+  groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
+  deepseek: [],
+  together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
+  fireworks: [],
+  xai: [],
+}
+
+async function configureVision(dataDir) {
+  const authPath = join(homedir(), ".local", "share", "opencode", "auth.json")
+  if (!existsSync(authPath)) return
+
+  let auth = {}
+  try { auth = JSON.parse(readFileSync(authPath, "utf8")) } catch { return }
+
+  // Find providers with API keys
+  const available = []
+  for (const [pid, info] of Object.entries(auth)) {
+    if (info.key && DEFAULT_VISION_MODELS[pid]?.length > 0) {
+      available.push({ id: pid, key: info.key, models: DEFAULT_VISION_MODELS[pid] })
+    }
+  }
+  if (available.length === 0) return
+
+  // Ask user if they want to configure
+  console.log("")
+  const want = await promptConfirm("Configure vision provider? (detected keys for: " + available.map((p) => p.id).join(", ") + ")")
+  if (!want) return
+
+  // Pick provider
+  const [pid] = await promptList("Select vision provider:", available.map((p) => ({
+    label: p.id,
+    value: p.id,
+  })))
+
+  const provider = available.find((p) => p.id === pid)
+  if (!provider) return
+
+  // Pick model
+  const modelChoices = provider.models.map((m) => ({ label: m, value: m }))
+  modelChoices.push({ label: "Custom (type manually)", value: "__custom__" })
+  const [model] = await promptList("Select vision model:", modelChoices)
+
+  let finalModel = model
+  if (model === "__custom__") {
+    finalModel = await promptText("Enter model ID:")
+    if (!finalModel) return
+  }
+
+  // Write config
+  const cfgDir = dataDir
+  if (!existsSync(cfgDir)) mkdirSync(cfgDir, { recursive: true })
+  writeFileSync(join(cfgDir, "vision.json"), JSON.stringify({
+    providerId: pid,
+    model: finalModel,
+    apiKey: provider.key,
+    isAnthropic: pid === "anthropic",
+  }, null, 2) + "\n")
+  console.log(`  ✓ Saved ${cfgDir}/vision.json (${pid}/${finalModel})\n`)
+}
+
+async function promptText(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => {
+    rl.question(`  ${question} `, (answer) => {
+      rl.close()
+      resolve(answer.trim())
+    })
+  })
+}
+
 // ── Main ──────────────────────────────────────────────────────────────
 
 async function main() {
@@ -228,7 +304,12 @@ async function main() {
   }))
   const selectedPlugins = await promptList("Select plugins (Space to toggle, Enter to confirm):", pluginChoices, { multi: true })
 
-  // Step 3: summary + confirm
+  // Step 3: configure vision provider (if vision plugin selected)
+  if (selectedPlugins.includes("vision")) {
+    await configureVision(target === "local" ? join(cwd, ".opencode") : GLOBAL_DIR)
+  }
+
+  // Step 4: summary + confirm
   const label = target === "local" ? "local (.opencode/)" : "global (~/.config/opencode/)"
   console.log(`\n  Target:  ${label}`)
   console.log(`  Plugins: ${selectedPlugins.join(", ")}`)
