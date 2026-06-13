@@ -13,7 +13,6 @@ interface ModelStats {
 }
 
 const storage = new Map<string, Map<string, ModelStats>>()
-const seen = new Map<string, Set<string>>()
 
 function ensure(key: string, map: Map<string, ModelStats>): ModelStats {
   let s = map.get(key)
@@ -35,6 +34,9 @@ function pct(part: number, total: number): string {
 }
 
 export const AdStatsPlugin: Plugin = async () => {
+  // Track last values per message — allows updating without double-counting
+  const lastValues = new Map<string, { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number; cost: number }>()
+  
   return {
     event: async ({ event }) => {
       try {
@@ -42,36 +44,37 @@ export const AdStatsPlugin: Plugin = async () => {
         const msg = event.properties.info
         if (msg.role !== "assistant") return
 
-        let sidset = seen.get(msg.sessionID)
-        if (!sidset) {
-          sidset = new Set()
-          seen.set(msg.sessionID, sidset)
-        }
-        if (sidset.has(msg.id)) return
-        sidset.add(msg.id)
-
         const key = `${msg.providerID}/${msg.modelID}`
-
         let session = storage.get(msg.sessionID)
         if (!session) {
           session = new Map()
           storage.set(msg.sessionID, session)
         }
-
         const s = ensure(key, session)
-        s.input += msg.tokens.input
-        s.output += msg.tokens.output
-        s.reasoning += msg.tokens.reasoning
-        s.cacheRead += msg.tokens.cache.read
-        s.cacheWrite += msg.tokens.cache.write
-        s.cost += msg.cost
-        s.messages++
+
+        // Delta tracking: subtract previous values, add new values
+        const prev = lastValues.get(msg.id) || { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }
+        const cur = {
+          input: msg.tokens?.input || 0,
+          output: msg.tokens?.output || 0,
+          reasoning: msg.tokens?.reasoning || 0,
+          cacheRead: msg.tokens?.cache?.read || 0,
+          cacheWrite: msg.tokens?.cache?.write || 0,
+          cost: msg.cost || 0,
+        }
+        s.input += cur.input - prev.input
+        s.output += cur.output - prev.output
+        s.reasoning += cur.reasoning - prev.reasoning
+        s.cacheRead = cur.cacheRead  // cache is cumulative per message, use latest
+        s.cacheWrite = cur.cacheWrite
+        s.cost += cur.cost - prev.cost
+        if (prev.input === 0 && cur.input > 0) s.messages++  // count only first real update
+        lastValues.set(msg.id, cur)
       }
 
         if (event.type === "session.deleted") {
           const id = event.properties.info.id
           storage.delete(id)
-          seen.delete(id)
         }
       } catch { /* skip malformed events */ }
     },
