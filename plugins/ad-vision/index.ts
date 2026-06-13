@@ -386,6 +386,7 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
         (p: any) => p.type === "file" && isImageMime((p as FilePart).mime),
       ) as FilePart[]
       if (imageParts.length === 0) return
+      showToast(`Vision: ${imageParts.length} image(s) detected`, "info", 1500)
       if (!primedSessions.has(_input.sessionID)) {
         primedSessions.add(_input.sessionID)
         output.parts.unshift({
@@ -401,6 +402,7 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
         try {
           const extracted = extractBase64FromDataUrl(part.url)
           if (!extracted) continue
+          showToast(`Describing image...`, "info", 2000)
           const description = await describeBase64(extracted.base64, extracted.mime, config)
           output.parts.push({
             id: `${part.id}_desc`,
@@ -410,12 +412,15 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
             text: `[Image${part.filename ? `: ${part.filename}` : ""}]\n\n${description}`,
             synthetic: true,
           })
+          showToast(`Image described via ${config.providerId}/${config.model}`, "info", 2000)
         } catch (err) {
           console.error(`[ad-vision] Failed to describe pasted image:`, err)
+          showToast(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`, "error", 5000)
         }
       }
       } catch (err) {
         console.error("[ad-vision] chat.message hook error:", err)
+        showToast(`Vision plugin error: ${err instanceof Error ? err.message : String(err)}`, "error", 5000)
       }
     },
     "tool.execute.after": async (input: any, output: any) => {
@@ -428,10 +433,13 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
       if (!config.apiKey) return
       describedFiles.add(filePath)
       try {
+        showToast(`Describing ${filePath.split("/").pop()}...`, "info", 2000)
         const description = await describeFile(filePath, config)
         output.output = `[Image described by vision plugin]\n\n${description}`
+        showToast(`Image described via ${config.providerId}/${config.model}`, "info", 2000)
       } catch (err) {
-        console.error(`[multimodal-bridge] Failed to auto-describe ${filePath}:`, err)
+        console.error(`[ad-vision] Failed to auto-describe ${filePath}:`, err)
+        showToast(`Failed to describe image: ${err instanceof Error ? err.message : String(err)}`, "error", 5000)
       }
     },
   }
