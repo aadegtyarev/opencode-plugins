@@ -125,6 +125,18 @@ function detectIsAnthropic(provider: any): boolean {
   return false
 }
 
+// Known vision models to try when auto-discovery can't find one on a provider with a key
+const DEFAULT_VISION_MODELS: Record<string, string[]> = {
+  openai: ["gpt-4o", "gpt-4o-mini"],
+  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
+  openrouter: ["google/gemini-2.0-flash-exp:free", "qwen/qwen-vl-max", "openai/gpt-4o"],
+  groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
+  deepseek: [], // no vision models
+  together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
+  fireworks: [],
+  xai: [],
+}
+
 function pickVisionModel(provider: any): string | null {
   if (!provider.models) return null
   for (const [id, m] of Object.entries(provider.models) as [string, any][]) {
@@ -152,10 +164,16 @@ async function resolveConfig(options: PluginOptions, client: any): Promise<Resol
     return { providerId: pid, model, apiKey, baseUrl, isAnthropic }
   }
 
+  // Auto-discovery: find first provider with key + vision model
   for (const provider of allProviders) {
     const apiKey = extractProviderApiKey(provider)
     if (!apiKey) continue
-    const model = pickVisionModel(provider)
+    let model = pickVisionModel(provider)
+    // If no vision model detected, try known defaults for this provider
+    if (!model) {
+      const defaults = DEFAULT_VISION_MODELS[provider.id] || []
+      model = defaults[0] || null
+    }
     if (!model) continue
     return {
       providerId: provider.id,
@@ -260,9 +278,10 @@ export const VisionPlugin = async (ctx: any, options: any) => {
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  // Lazy config — resolves on first use, prevents blocking at startup
-  let configPromise: Promise<ResolvedConfig> | null = null
+  // Manual override — set by configure_vision tool, takes precedence over auto-discovery
+  let manualConfig: ResolvedConfig | null = null
   const getConfig = () => {
+    if (manualConfig) return Promise.resolve(manualConfig)
     if (!configPromise) configPromise = resolveConfig(opts, ctx.client)
     return configPromise
   }
@@ -287,6 +306,69 @@ export const VisionPlugin = async (ctx: any, options: any) => {
 
   return {
     tool: {
+      configure_vision: tool({
+        description:
+          "Configure which vision provider and model to use for image descriptions. " +
+          "Call this FIRST before any image tools. Lists available providers or sets a specific one.",
+        args: {
+          provider: tool.schema.string().optional()
+            .describe("Provider ID (e.g. openrouter, openai, anthropic). Omit to list available providers."),
+          model: tool.schema.string().optional()
+            .describe("Model ID to use for vision (e.g. google/gemini-2.0-flash-exp:free). Omit to auto-select."),
+        },
+        async execute(args: any, _context: any) {
+          const config = await getConfig()
+          if (args.provider) {
+            // Set manual config
+            const pid = args.provider
+            const builtin = BUILTIN_PROVIDERS[pid]
+            if (!builtin) return `Unknown provider: "${pid}". Known: ${Object.keys(BUILTIN_PROVIDERS).join(", ")}.`
+            const model = args.model || DEFAULT_VISION_MODELS[pid]?.[0] || "gpt-4o"
+            let apiKey = ""
+            let baseUrl = builtin.api
+            let isAnthropic = builtin.isAnthropic
+
+            // Try to get api key from opencode providers
+            try {
+              const result = await ctx.client.config.providers()
+              const allProviders = result?.data?.providers || result?.providers || []
+              const provider = allProviders.find((p: any) => p.id === pid)
+              if (provider) {
+                apiKey = extractProviderApiKey(provider)
+                baseUrl = extractProviderBaseUrl(provider)
+                isAnthropic = detectIsAnthropic(provider)
+              }
+            } catch { }
+
+            if (!apiKey) {
+              apiKey = process.env.MULTIMODAL_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ""
+            }
+            if (!apiKey) return `No API key found for "${pid}". Set MULTIMODAL_API_KEY env var or add the provider in opencode.`
+
+            manualConfig = { providerId: pid, model, apiKey, baseUrl, isAnthropic }
+            showToast(`Vision configured: ${pid}/${model}`, "info", 4000)
+            return `Vision configured: provider=${pid}, model=${model}. Image descriptions will use this from now on.`
+          }
+
+          // List available providers
+          const lines: string[] = ["Available vision providers:"]
+          try {
+            const result = await ctx.client.config.providers()
+            const allProviders = result?.data?.providers || result?.providers || []
+            for (const p of allProviders) {
+              const key = extractProviderApiKey(p)
+              const defaults = DEFAULT_VISION_MODELS[p.id] || []
+              const status = key ? "✓ key found" : "✗ no key"
+              const models = defaults.length > 0 ? `  defaults: ${defaults.join(", ")}` : ""
+              lines.push(`  ${p.id} (${status})${models}`)
+            }
+          } catch {
+            lines.push("  (could not query providers)")
+          }
+          lines.push("", "Use: configure_vision { provider: \"openrouter\", model: \"qwen/qwen-vl-max\" }")
+          return lines.join("\n")
+        },
+      }),
       describe_image: tool({
         description:
           "Describe an image file (screenshot, photo, diagram, etc.) by sending it to a multimodal AI model. " +
@@ -348,8 +430,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
         }
       }
     },
-    "tool.execute.after": async (input: any) => {
-      const config = await getConfig()
+    "tool.execute.after": async (input: any, output: any) => {
       if (!config.apiKey) return
       if (input.tool !== "read") return
       const args = input.args as Record<string, any> | undefined
@@ -359,13 +440,7 @@ export const VisionPlugin = async (ctx: any, options: any) => {
       describedFiles.add(filePath)
       try {
         const description = await describeFile(filePath, config)
-        await ctx.client.session.prompt({
-          path: { id: input.sessionID },
-          body: {
-            noReply: true,
-            parts: [{ type: "text", text: `[Auto-described image: ${filePath}]\n\n${description}` }],
-          },
-        })
+        output.output = `[Image described by vision plugin]\n\n${description}`
       } catch (err) {
         console.error(`[multimodal-bridge] Failed to auto-describe ${filePath}:`, err)
       }
