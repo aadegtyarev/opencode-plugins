@@ -321,14 +321,6 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
           const auth = await authFile.json()
           key = auth[pid]?.key || ""
         }
-        if (!baseUrl) {
-          try {
-            const result = await ctx.client.config.providers()
-            const all = result?.data?.providers || result?.providers || []
-            const p = all.find((x: any) => x.id === pid)
-            if (p) baseUrl = extractProviderBaseUrl(p)
-          } catch { }
-        }
       } catch { }
       if (!key) key = process.env.MULTIMODAL_API_KEY || ""
       if (!baseUrl) baseUrl = "https://api.openai.com/v1"
@@ -348,19 +340,12 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
     try { await ctx.client.tui.showToast({ body: { message: msg, variant, duration } }) } catch { }
   }
 
-  // Fire-and-forget: resolve config in background for early toast
-  getConfig().then((config) => {
-    if (!config.apiKey) {
-      console.warn(
-        `[multimodal-bridge] No vision provider found. ` +
-        `Configure one in opencode.json → provider.<id>.options.apiKey. ` +
-        `Supported: openai, anthropic, openrouter, groq, deepseek, together, fireworks, xai.`
-      )
-      showToast("[vision] No API key configured", "warning", 8000)
-    } else if (!opts.provider) {
+  // Toast on startup only if config already exists
+  if (bootCfg.model) {
+    getConfig().then((config) => {
       showToast(`Vision: ${config.providerId}/${config.model} (v${VERSION})`, "info", 4000)
-    }
-  })
+    })
+  }
 
   return {
     tool: {
