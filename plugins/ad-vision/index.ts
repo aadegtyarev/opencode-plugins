@@ -287,58 +287,58 @@ export const AdVisionPlugin = async (ctx: any, options: any) => {
   const describedFiles = new Set<string>()
   const primedSessions = new Set<string>()
 
-  // Load config: local overrides global. Also fallback to .env for compat.
-  const [globalCfg, localCfg] = await Promise.all([
-    loadPluginConfig(`${process.env.HOME}/.config/opencode`),
-    loadPluginConfig(`${ctx.directory}/.opencode`),
-  ])
-  const cfg = { enabled: "true", ...globalCfg, ...localCfg }
+  // Read config lazily — picks up changes from /ad-vision command
+  const readCfg = async (): Promise<Record<string, string>> => {
+    const [globalCfg, localCfg] = await Promise.all([
+      loadPluginConfig(`${process.env.HOME}/.config/opencode`),
+      loadPluginConfig(`${ctx.directory}/.opencode`),
+    ])
+    const c = { ...globalCfg, ...localCfg }
+    if (process.env.VISION_ENABLED === "false") c.enabled = "false"
+    if (process.env.VISION_ENABLED === "true") c.enabled = "true"
+    return c
+  }
 
-  // Support VISION_ENABLED env var as override
-  if (process.env.VISION_ENABLED === "false" || process.env.VISION_ENABLED === "0") cfg.enabled = "false"
-  if (process.env.VISION_ENABLED === "true" || process.env.VISION_ENABLED === "1") cfg.enabled = "true"
-
-  if (cfg.enabled === "false") {
+  // Check disabled at boot (fast path)
+  const bootCfg = await readCfg()
+  if (bootCfg.enabled === "false") {
     console.log("[ad-vision] Disabled")
     return { tool: {} }
   }
 
-  // Lazy config — resolves on first use, prevents blocking at startup
+  // Lazy config — reads ad-vision.json on first use, picks up changes from /ad-vision
   let configPromise: Promise<ResolvedConfig> | null = null
-  const getConfig = () => {
+  const getConfig = async (): Promise<ResolvedConfig> => {
+    const cfg = await readCfg()
     if (cfg.model) {
       const pid = cfg.provider || "openai"
       const builtin = BUILTIN_PROVIDERS[pid]
-      configPromise = (async () => {
-        let key = ""
-        let baseUrl = cfg.baseUrl || builtin?.api || ""
-        try {
-          const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
-          if (await authFile.exists()) {
-            const auth = await authFile.json()
-            key = auth[pid]?.key || ""
-          }
-          // Also try to get baseUrl from opencode provider config
-          if (!baseUrl) {
-            try {
-              const result = await ctx.client.config.providers()
-              const all = result?.data?.providers || result?.providers || []
-              const p = all.find((x: any) => x.id === pid)
-              if (p) baseUrl = extractProviderBaseUrl(p)
-            } catch { }
-          }
-        } catch { }
-        if (!key) key = process.env.MULTIMODAL_API_KEY || ""
-        if (!baseUrl) baseUrl = "https://api.openai.com/v1"
-        return {
-          providerId: pid,
-          model: cfg.model,
-          apiKey: key,
-          baseUrl,
-          isAnthropic: builtin?.isAnthropic || false,
+      let key = ""
+      let baseUrl = cfg.baseUrl || builtin?.api || ""
+      try {
+        const authFile = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
+        if (await authFile.exists()) {
+          const auth = await authFile.json()
+          key = auth[pid]?.key || ""
         }
-      })()
-      return configPromise
+        if (!baseUrl) {
+          try {
+            const result = await ctx.client.config.providers()
+            const all = result?.data?.providers || result?.providers || []
+            const p = all.find((x: any) => x.id === pid)
+            if (p) baseUrl = extractProviderBaseUrl(p)
+          } catch { }
+        }
+      } catch { }
+      if (!key) key = process.env.MULTIMODAL_API_KEY || ""
+      if (!baseUrl) baseUrl = "https://api.openai.com/v1"
+      return {
+        providerId: pid,
+        model: cfg.model,
+        apiKey: key,
+        baseUrl,
+        isAnthropic: builtin?.isAnthropic || false,
+      }
     }
     if (!configPromise) configPromise = resolveConfig(opts, ctx.client, {})
     return configPromise
