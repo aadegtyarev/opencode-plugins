@@ -183,7 +183,7 @@ async function promptConfirm(question) {
 const DEFAULT_VISION_MODELS = {
   openai: ["gpt-4o", "gpt-4o-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
-  openrouter: ["qwen/qwen3-vl-32b-instruct", "google/gemini-2.0-flash-exp:free", "openai/gpt-4o"],
+  openrouter: ["google/gemini-2.5-flash-lite", "openai/gpt-4o-mini", "qwen/qwen2.5-vl-72b-instruct"],
   groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
   deepseek: [],
   together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],

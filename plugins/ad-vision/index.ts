@@ -3,7 +3,7 @@ import type { FilePart } from "@opencode-ai/sdk"
 import { tool } from "@opencode-ai/plugin"
 import { appendFile } from "node:fs/promises"
 
-const VERSION = "0.4.0"
+const VERSION = "0.4.1"
 
 // Shared token-usage ledger. The vision model is called over raw HTTP, so its
 // usage never reaches opencode's message events — the ad-stats plugin reads this
@@ -167,7 +167,7 @@ function detectIsAnthropic(provider: any): boolean {
 const DEFAULT_VISION_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
-  openrouter: ["qwen/qwen3-vl-32b-instruct", "google/gemini-2.0-flash-exp:free", "openai/gpt-4o"],
+  openrouter: ["google/gemini-2.5-flash-lite", "openai/gpt-4o-mini", "qwen/qwen2.5-vl-72b-instruct"],
   groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
   deepseek: [], // no vision models
   together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
@@ -298,7 +298,11 @@ async function callOpenAICompatibleApi(base64: string, mediaType: string, config
   })
   const data = (await response.json()) as any
   if (data.error) throw new Error(`${config.providerId} API error: ${data.error.message}`)
-  const text = data?.choices?.[0]?.message?.content
+  // Reasoning models (e.g. gemini-*-pro-preview) return the answer in `content`,
+  // but if the token budget is spent thinking, `content` is null and the text
+  // lands in `reasoning`. Fall back to it so reasoning models still describe.
+  const msg = data?.choices?.[0]?.message
+  const text = msg?.content || msg?.reasoning || msg?.reasoning_content
   if (!text) throw new Error(`${config.providerId} returned no content: ${JSON.stringify(data).slice(0, 300)}`)
   return {
     text,
