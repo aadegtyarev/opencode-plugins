@@ -3,7 +3,7 @@ import type { FilePart } from "@opencode-ai/sdk"
 import { tool } from "@opencode-ai/plugin"
 import { appendFile } from "node:fs/promises"
 
-const VERSION = "0.3.0"
+const VERSION = "0.4.0"
 
 // Shared token-usage ledger. The vision model is called over raw HTTP, so its
 // usage never reaches opencode's message events — the ad-stats plugin reads this
@@ -118,9 +118,21 @@ const BUILTIN_PROVIDERS: Record<string, { api: string; isAnthropic: boolean }> =
   xai:          { api: "https://api.x.ai/v1",                  isAnthropic: false },
 }
 
-function extractProviderApiKey(provider: any): string {
+// opencode stores provider keys in auth.json, not in the provider objects
+// returned by config.providers(). Read it once so auto-discovery can find keys.
+async function loadAuth(): Promise<Record<string, any>> {
+  try {
+    const f = Bun.file(`${process.env.HOME}/.local/share/opencode/auth.json`)
+    if (await f.exists()) return await f.json()
+  } catch { /* no auth.json — fall back to env vars */ }
+  return {}
+}
+
+function extractProviderApiKey(provider: any, auth: Record<string, any> = {}): string {
   if (provider.options?.apiKey) return provider.options.apiKey
   if (provider.request?.body?.apiKey) return provider.request.body.apiKey
+  const fromAuth = auth[provider.id]?.key
+  if (fromAuth) return fromAuth
   if (Array.isArray(provider.env)) {
     for (const envVar of provider.env) {
       const val = process.env[envVar]
@@ -155,7 +167,7 @@ function detectIsAnthropic(provider: any): boolean {
 const DEFAULT_VISION_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
-  openrouter: ["google/gemini-2.0-flash-exp:free", "qwen/qwen-vl-max", "openai/gpt-4o"],
+  openrouter: ["qwen/qwen3-vl-32b-instruct", "google/gemini-2.0-flash-exp:free", "openai/gpt-4o"],
   groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
   deepseek: [], // no vision models
   together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
@@ -180,11 +192,12 @@ async function resolveConfig(options: PluginOptions, client: any, envFile: Recor
     const result = await client.config.providers()
     allProviders = result?.data?.providers || result?.providers || []
   } catch { /* fall back to env vars */ }
+  const auth = await loadAuth()
 
   if (options.provider) {
     const pid = options.provider
     const provider = allProviders.find((p: any) => p.id === pid)
-    const apiKey = provider ? extractProviderApiKey(provider) : process.env.MULTIMODAL_API_KEY || ""
+    const apiKey = (provider ? extractProviderApiKey(provider, auth) : "") || auth[pid]?.key || process.env.MULTIMODAL_API_KEY || ""
     const baseUrl = provider ? extractProviderBaseUrl(provider) : (BUILTIN_PROVIDERS[pid]?.api || "https://api.openai.com/v1")
     const isAnthropic = provider ? detectIsAnthropic(provider) : (BUILTIN_PROVIDERS[pid]?.isAnthropic || false)
     const model = options.model || (provider ? pickVisionModel(provider) || "gpt-4o" : "gpt-4o")
@@ -193,7 +206,7 @@ async function resolveConfig(options: PluginOptions, client: any, envFile: Recor
 
   // Auto-discovery: find first provider with key + vision model
   for (const provider of allProviders) {
-    const apiKey = extractProviderApiKey(provider)
+    const apiKey = extractProviderApiKey(provider, auth)
     if (!apiKey) continue
     let model = pickVisionModel(provider)
     // If no vision model detected, try known defaults for this provider

@@ -1,13 +1,36 @@
 ---
-description: Configure vision plugin — provider, model, enable/disable
+description: Configure vision plugin — provider, model, scope, enable/disable
 ---
 You are a vision plugin setup assistant. Follow these steps:
 
-1. Read `.opencode/ad-vision.json` and `~/.config/opencode/ad-vision.json` to check current config.
-2. Read `~/.local/share/opencode/auth.json` to find available API providers and their keys.
-3. Show the user which providers are available and ask which one to use for vision.
-4. Ask which model to use.
-5. Write config to `.opencode/ad-vision.json`:
+1. Read the current config from both locations (either may be absent):
+   - global: `~/.config/opencode/ad-vision.json`
+   - local: `.opencode/ad-vision.json`
+   The plugin merges global then local (local wins). Show the user what is currently in effect.
+
+2. Read `~/.local/share/opencode/auth.json` to see which providers have API keys.
+   List those provider ids to the user — only providers with a key can be used for vision.
+
+3. Ask the user **which provider** to use for vision (must be one with a key from step 2).
+   Vision-capable providers include: `openrouter`, `openai`, `anthropic`, `groq`, `together`.
+   Note: `deepseek`, `fireworks`, `xai` have no vision models — do not offer them.
+
+4. Ask the user **which model** to use. Suggest a known-good model for the chosen provider:
+   - openrouter → `qwen/qwen3-vl-32b-instruct` (or `google/gemini-2.0-flash-exp:free`)
+   - openai → `gpt-4o-mini`
+   - anthropic → `claude-3-5-sonnet-20241022`
+   - groq → `llama-3.2-11b-vision-preview`
+   - together → `meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo`
+
+5. Ask **where to write** the config:
+   - **global** (`~/.config/opencode/ad-vision.json`) — applies to every project. Use this if the
+     plugin is installed globally (check whether `~/.config/opencode/plugins/ad-vision.ts` exists).
+   - **local** (`.opencode/ad-vision.json`) — applies to this project only, overrides global.
+   If the plugin is only installed globally, default to global.
+
+6. Write the chosen file. **Always include both `provider` and `model`** — without `provider`
+   the plugin defaults to `openai` and will fail for any other provider. The API key and baseUrl
+   are auto-derived from the provider id (read from `auth.json` and the plugin's builtin provider map).
 ```json
 {
   "provider": "openrouter",
@@ -15,4 +38,6 @@ You are a vision plugin setup assistant. Follow these steps:
   "enabled": true
 }
 ```
-Only `model` is required. `provider`, `baseUrl`, and API key are auto-derived from opencode config.
+
+7. Confirm to the user what was written and where, and remind them that the new config is picked up
+   on the next message (config is read lazily, no restart needed).

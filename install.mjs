@@ -183,7 +183,7 @@ async function promptConfirm(question) {
 const DEFAULT_VISION_MODELS = {
   openai: ["gpt-4o", "gpt-4o-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
-  openrouter: ["google/gemini-2.0-flash-exp:free", "qwen/qwen-vl-max", "openai/gpt-4o"],
+  openrouter: ["qwen/qwen3-vl-32b-instruct", "google/gemini-2.0-flash-exp:free", "openai/gpt-4o"],
   groq: ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
   deepseek: [],
   together: ["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
@@ -191,37 +191,55 @@ const DEFAULT_VISION_MODELS = {
   xai: [],
 }
 
-async function configureVision(dataDir) {
+// Providers that have a key in auth.json AND a known vision model.
+function eligibleVisionProviders() {
   const authPath = join(homedir(), ".local", "share", "opencode", "auth.json")
-  if (!existsSync(authPath)) return
-
+  if (!existsSync(authPath)) return []
   let auth = {}
-  try { auth = JSON.parse(readFileSync(authPath, "utf8")) } catch { return }
-
-  // Find providers with API keys
-  const available = []
+  try { auth = JSON.parse(readFileSync(authPath, "utf8")) } catch { return [] }
+  const out = []
   for (const [pid, info] of Object.entries(auth)) {
-    if (info.key && DEFAULT_VISION_MODELS[pid]?.length > 0) {
-      available.push({ id: pid, key: info.key, models: DEFAULT_VISION_MODELS[pid] })
+    if (info?.key && DEFAULT_VISION_MODELS[pid]?.length > 0) {
+      out.push({ id: pid, models: DEFAULT_VISION_MODELS[pid] })
     }
   }
-  if (available.length === 0) return
+  return out
+}
 
-  // Ask user if they want to configure
+// Write the config the plugin actually reads: ad-vision.json with provider+model.
+// The API key and baseUrl are derived by the plugin from the provider id, so they
+// are intentionally NOT stored here.
+function writeVisionConfig(configDir, provider, model) {
+  const path = join(configDir, "ad-vision.json")
+  let existing = {}
+  if (existsSync(path)) {
+    try { existing = JSON.parse(readFileSync(path, "utf8")) } catch { /* overwrite garbage */ }
+  }
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(path, JSON.stringify({ ...existing, provider, model, enabled: true }, null, 2) + "\n")
+  return path
+}
+
+// Interactive: ask provider + model, write ad-vision.json into configDir.
+async function configureVision(configDir) {
+  const available = eligibleVisionProviders()
+  if (available.length === 0) {
+    console.log("\n  Vision: no vision-capable provider key found in auth.json.")
+    console.log("  Add an openrouter / openai / anthropic / groq / together key, then run /ad-vision.\n")
+    return
+  }
+
   console.log("")
-  const want = await promptConfirm("Configure vision provider? (detected keys for: " + available.map((p) => p.id).join(", ") + ")")
-  if (!want) return
+  const want = await promptConfirm("Configure vision provider now? (keys detected: " + available.map((p) => p.id).join(", ") + ")")
+  if (!want) {
+    console.log("  Skipped — vision will auto-discover a provider, or run /ad-vision later.\n")
+    return
+  }
 
-  // Pick provider
-  const [pid] = await promptList("Select vision provider:", available.map((p) => ({
-    label: p.id,
-    value: p.id,
-  })))
-
+  const [pid] = await promptList("Select vision provider:", available.map((p) => ({ label: p.id, value: p.id })))
   const provider = available.find((p) => p.id === pid)
   if (!provider) return
 
-  // Pick model
   const modelChoices = provider.models.map((m) => ({ label: m, value: m }))
   modelChoices.push({ label: "Custom (type manually)", value: "__custom__" })
   const [model] = await promptList("Select vision model:", modelChoices)
@@ -232,15 +250,33 @@ async function configureVision(dataDir) {
     if (!finalModel) return
   }
 
-  // Write config
-  console.log(`\n  Add to your shell config (~/.bashrc, ~/.zshrc) or run before opencode:\n`)
-  console.log(`  export VISION_ENABLED=true`)
-  console.log(`  export MULTIMODAL_API_KEY=<your-${pid}-key>   # already detected from auth.json`)
-  console.log(`  export MULTIMODAL_MODEL=${finalModel}`)
-  if (pid !== "openai" && pid !== "anthropic") {
-    console.log(`  export MULTIMODAL_BASE_URL=https://...       # provider's API base URL`)
+  const path = writeVisionConfig(configDir, pid, finalModel)
+  console.log(`\n  ✓ Vision configured → ${path}`)
+  console.log(`    { provider: "${pid}", model: "${finalModel}" }  — change anytime with /ad-vision\n`)
+}
+
+// Non-interactive: write a config when the choice is unambiguous, else hint.
+function postInstallVisionHint(configDir) {
+  const path = join(configDir, "ad-vision.json")
+  if (existsSync(path)) {
+    console.log(`\n  Vision: config already present → ${path}`)
+    return
   }
-  console.log("")
+  const available = eligibleVisionProviders()
+  if (available.length === 0) {
+    console.log("\n  Vision: no vision-capable provider key in auth.json yet.")
+    console.log("  Add an openrouter / openai / anthropic / groq / together key, then run /ad-vision.")
+    return
+  }
+  if (available.length === 1) {
+    const p = available[0]
+    const written = writeVisionConfig(configDir, p.id, p.models[0])
+    console.log(`\n  ✓ Vision auto-configured → ${written}`)
+    console.log(`    { provider: "${p.id}", model: "${p.models[0]}" }  — change with /ad-vision`)
+    return
+  }
+  console.log("\n  Vision: multiple provider keys detected (" + available.map((p) => p.id).join(", ") + ").")
+  console.log("  Run /ad-vision to pick provider + model (auto-discovery will otherwise choose one).")
 }
 
 async function promptText(question) {
@@ -264,7 +300,10 @@ async function main() {
     console.log("Flags:\n  --local   Install into project .opencode/\n  --global  Install into ~/.config/opencode/\n  --help    Show this help\n")
     console.log("Available plugins:")
     for (const [name] of pluginMap) console.log(`  ${name}`)
-    console.log("\nPlugins are copied to .opencode/plugins/ and auto-loaded — no config changes needed.")
+    console.log("\nPlugins are copied to <target>/plugins/ and auto-loaded — no config changes needed.")
+    console.log("Target is .opencode/ (local) or ~/.config/opencode/ (global, with --global).")
+    console.log("When ad-vision is installed, a vision provider+model is configured into")
+    console.log("<target>/ad-vision.json (auto when one key is found; otherwise run /ad-vision).")
     console.log("\nRun without arguments for interactive mode.\n")
     process.exit(0)
   }
@@ -281,17 +320,11 @@ async function main() {
   if (names.length > 0 || flags.includes("--local") || flags.includes("--global")) {
     const requested = names.length > 0 ? names : [...pluginMap.keys()]
     const cwd = process.cwd()
-    const hasLocal = existsSync(join(cwd, ".opencode")) || findConfig(cwd) !== null
-    if (flags.includes("--global")) {
-      runInstall(GLOBAL_DIR, GLOBAL_DIR, "global (~/.config/opencode/)", pluginMap, requested)
-    } else if (flags.includes("--local")) {
-      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
-    } else if (hasLocal) {
-      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
-    } else {
-      // No local project detected — install locally anyway (user is in a directory)
-      runInstall(join(cwd, ".opencode"), cwd, "local (.opencode/)", pluginMap, requested)
-    }
+    // --global → ~/.config/opencode; otherwise local .opencode/ of the cwd.
+    const configDir = flags.includes("--global") ? GLOBAL_DIR : join(cwd, ".opencode")
+    const label = flags.includes("--global") ? "global (~/.config/opencode/)" : "local (.opencode/)"
+    runInstall(configDir, configDir, label, pluginMap, requested)
+    if (requested.includes("ad-vision")) postInstallVisionHint(configDir)
     return
   }
 
@@ -316,12 +349,8 @@ async function main() {
   }))
   const selectedPlugins = await promptList("Select plugins (Space to toggle, Enter to confirm):", pluginChoices, { multi: true })
 
-  // Step 3: configure vision provider (if vision plugin selected)
-  if (selectedPlugins.includes("vision")) {
-    await configureVision(target === "local" ? join(cwd, ".opencode") : GLOBAL_DIR)
-  }
-
-  // Step 4: summary + confirm
+  // Step 3: summary + confirm
+  const configDir = target === "local" ? join(cwd, ".opencode") : GLOBAL_DIR
   const label = target === "local" ? "local (.opencode/)" : "global (~/.config/opencode/)"
   console.log(`\n  Target:  ${label}`)
   console.log(`  Plugins: ${selectedPlugins.join(", ")}`)
@@ -329,11 +358,10 @@ async function main() {
   const ok = await promptConfirm("Proceed with installation?")
   if (!ok) { console.log("  Cancelled.\n"); process.exit(0) }
 
-  if (target === "local") {
-    runInstall(join(cwd, ".opencode"), cwd, label, pluginMap, selectedPlugins)
-  } else {
-    runInstall(GLOBAL_DIR, GLOBAL_DIR, label, pluginMap, selectedPlugins)
-  }
+  runInstall(configDir, configDir, label, pluginMap, selectedPlugins)
+
+  // Step 4: configure vision provider (writes ad-vision.json into the same dir)
+  if (selectedPlugins.includes("ad-vision")) await configureVision(configDir)
 }
 
 main().catch((err) => {
